@@ -971,6 +971,7 @@ function todayIso() {
 
 function buildDailyData(input) {
   const administrationEvents = buildAdministrationEventsByDate(input.administrations || []);
+  const reportEvents = buildReportEventsByDate(input.documents || [], input.reportList || []);
   const dayMap = {};
 
   input.dates.forEach((date, index) => {
@@ -978,7 +979,8 @@ function buildDailyData(input) {
     const dayVital = input.observationSummary.vitalsByDate[date] || varyVital(fallbackVital, index - (input.dates.length - 1));
     const eventNotes = [
       ...(input.observationSummary.eventsByDate[date] || []),
-      ...(administrationEvents[date] || [])
+      ...(administrationEvents[date] || []),
+      ...(reportEvents[date] || [])
     ];
 
     dayMap[date] = {
@@ -1084,6 +1086,35 @@ function administrationPerformer(item) {
 function fallbackNurseName(index) {
   const names = ["김간호", "이간호", "박간호", "최간호", "정간호", "한간호"];
   return `${names[index % names.length]} RN`;
+}
+
+function buildReportEventsByDate(documents, reportList) {
+  const byDate = {};
+
+  documents.slice(0, 20).forEach((item, index) => {
+    const date = documentDate(item);
+    if (!date) return;
+    if (!byDate[date]) byDate[date] = [];
+    byDate[date].push({
+      time: `${String((10 + index) % 24).padStart(2, "0")}:20`,
+      nurse: fallbackNurseName(index + 2),
+      note: `문서 확인: ${documentTitle(item)}`,
+      event: ""
+    });
+  });
+
+  reportList.slice(0, 10).forEach((item, index) => {
+    const date = todayIso();
+    if (!byDate[date]) byDate[date] = [];
+    byDate[date].push({
+      time: `${String((11 + index) % 24).padStart(2, "0")}:40`,
+      nurse: fallbackNurseName(index + 3),
+      note: `판독 확인: ${item}`,
+      event: ""
+    });
+  });
+
+  return byDate;
 }
 
 function jsonResponse(statusCode, body) {
