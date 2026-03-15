@@ -8,6 +8,7 @@ const VITAL_CODES = {
   heartRate: ["8867-4"],
   bodyTemp: ["8310-5"],
   spo2: ["59408-5", "2708-6"],
+  respiratoryRate: ["9279-1"],
   bodyWeight: ["29463-7"],
   bodyHeight: ["8302-2"]
 };
@@ -15,16 +16,17 @@ const VITAL_CODES = {
 exports.handler = async function handler(event) {
   try {
     const id = event.queryStringParameters && event.queryStringParameters.id;
+
     if (id) {
       const detail = await fetchPatientDetail(id);
       return jsonResponse(200, detail);
     }
 
-    const list = await fetchPatientList();
-    return jsonResponse(200, { patients: list, source: "smart-health-it-sandbox" });
+    const patients = await fetchPatientList();
+    return jsonResponse(200, { patients, source: "smart-health-it-sandbox" });
   } catch (error) {
     return jsonResponse(500, {
-      error: "Failed to fetch external patients",
+      error: "FHIR 환자 정보를 가져오지 못했습니다.",
       detail: error.message
     });
   }
@@ -32,43 +34,57 @@ exports.handler = async function handler(event) {
 
 async function fetchPatientList() {
   const bundle = await fetchFHIR(`/Patient?_count=${DEFAULT_PATIENT_COUNT}&_elements=id,name,gender,birthDate`);
-  const entries = bundle.entry || [];
 
-  return entries
+  return (bundle.entry || [])
     .map((entry, index) => normalizePatientSummary(entry.resource, index))
     .filter(Boolean);
 }
 
 async function fetchPatientDetail(id) {
+  const patient = await fetchFHIR(`/Patient/${encodeURIComponent(id)}`);
+
   const [
+    encounters,
+    conditions,
+    observations,
+    medications,
+    administrations,
+    allergies,
+    procedures,
+    reports,
+    serviceRequests,
+    carePlans,
+    documents,
+    devices
+  ] = await Promise.all([
+    safeFetchResources(`/Encounter?patient=${encodeURIComponent(id)}&_count=20&_sort=-date`),
+    safeFetchResources(`/Condition?patient=${encodeURIComponent(id)}&_count=50`),
+    safeFetchResources(`/Observation?subject=${encodeURIComponent(id)}&_count=200&_sort=-date`),
+    safeFetchResources(`/MedicationRequest?patient=${encodeURIComponent(id)}&_count=50`),
+    safeFetchResources(`/MedicationAdministration?patient=${encodeURIComponent(id)}&_count=50&_sort=-effective-time`),
+    safeFetchResources(`/AllergyIntolerance?patient=${encodeURIComponent(id)}&_count=20`),
+    safeFetchResources(`/Procedure?patient=${encodeURIComponent(id)}&_count=30`),
+    safeFetchResources(`/DiagnosticReport?patient=${encodeURIComponent(id)}&_count=30`),
+    safeFetchResources(`/ServiceRequest?patient=${encodeURIComponent(id)}&_count=30`),
+    safeFetchResources(`/CarePlan?patient=${encodeURIComponent(id)}&_count=20`),
+    safeFetchResources(`/DocumentReference?patient=${encodeURIComponent(id)}&_count=20`),
+    safeFetchResources(`/Device?patient=${encodeURIComponent(id)}&_count=20`)
+  ]);
+
+  return normalizePatientDetail({
     patient,
     encounters,
     conditions,
     observations,
     medications,
+    administrations,
     allergies,
     procedures,
-    reports
-  ] = await Promise.all([
-    fetchFHIR(`/Patient/${encodeURIComponent(id)}`),
-    fetchFHIR(`/Encounter?patient=${encodeURIComponent(id)}&_count=10&_sort=-date`),
-    fetchFHIR(`/Condition?patient=${encodeURIComponent(id)}&_count=20`),
-    fetchFHIR(`/Observation?subject=${encodeURIComponent(id)}&_count=50&_sort=-date`),
-    fetchFHIR(`/MedicationRequest?patient=${encodeURIComponent(id)}&_count=20`),
-    fetchFHIR(`/AllergyIntolerance?patient=${encodeURIComponent(id)}&_count=10`),
-    fetchFHIR(`/Procedure?patient=${encodeURIComponent(id)}&_count=10`),
-    fetchFHIR(`/DiagnosticReport?patient=${encodeURIComponent(id)}&_count=10`)
-  ]);
-
-  return normalizePatientDetail({
-    patient,
-    encounters: extractResources(encounters),
-    conditions: extractResources(conditions),
-    observations: extractResources(observations),
-    medications: extractResources(medications),
-    allergies: extractResources(allergies),
-    procedures: extractResources(procedures),
-    reports: extractResources(reports)
+    reports,
+    serviceRequests,
+    carePlans,
+    documents,
+    devices
   });
 }
 
@@ -84,26 +100,27 @@ async function fetchFHIR(path) {
   return response.json();
 }
 
-function extractResources(bundle) {
-  return (bundle.entry || []).map((entry) => entry.resource).filter(Boolean);
+async function safeFetchResources(path) {
+  try {
+    const bundle = await fetchFHIR(path);
+    return (bundle.entry || []).map((entry) => entry.resource).filter(Boolean);
+  } catch (error) {
+    return [];
+  }
 }
 
 function normalizePatientSummary(resource, index) {
   if (!resource || !resource.id) return null;
 
-  const name = formatHumanName(resource.name && resource.name[0]) || `Patient ${index + 1}`;
-  const gender = (resource.gender || "-").toUpperCase().slice(0, 1) || "-";
-  const age = resource.birthDate ? String(calculateAge(resource.birthDate)) : "-";
-
   return {
     id: resource.id,
     room: `FHIR-${String(index + 1).padStart(2, "0")}`,
-    name,
-    gender,
-    age,
+    name: formatHumanName(resource.name && resource.name[0]) || `환자 ${index + 1}`,
     registrationNo: resource.id,
-    diagnosis: "External FHIR patient",
-    admitDate: resource.birthDate || "-",
+    gender: toGender(resource.gender),
+    age: resource.birthDate ? String(calculateAge(resource.birthDate)) : "-",
+    diagnosis: "외부 FHIR 환자",
+    admitDate: "-",
     bloodType: "-",
     bodyInfo: "-",
     doctor: "-",
@@ -113,359 +130,742 @@ function normalizePatientSummary(resource, index) {
 }
 
 function normalizePatientDetail(data) {
-  const patient = data.patient;
-  const latestEncounter = data.encounters[0];
-  const currentConditions = data.conditions.slice(0, 6);
-  const observationMap = buildObservationMap(data.observations);
-  const vitals = buildVitals(observationMap);
-  const bodyInfo = buildBodyInfo(observationMap);
-  const admitDate = latestEncounter && latestEncounter.period && latestEncounter.period.start
-    ? latestEncounter.period.start.slice(0, 10)
-    : (patient.birthDate || todayIso());
+  const latestEncounter = sortDesc(data.encounters, encounterDate)[0];
+  const conditions = sortDesc(data.conditions, conditionDate);
+  const observations = sortDesc(data.observations, observationDateTime);
+  const reports = sortDesc(data.reports, reportDate);
+  const procedures = sortDesc(data.procedures, procedureDate);
+  const medications = sortDesc(data.medications, medicationDate);
+  const serviceRequests = sortDesc(data.serviceRequests, serviceRequestDate);
+  const carePlans = sortDesc(data.carePlans, carePlanDate);
+  const documents = sortDesc(data.documents, documentDate);
 
-  const diagnosisList = currentConditions.map(conditionLabel).filter(Boolean);
-  const medicationList = data.medications.map(medicationLabel).filter(Boolean);
-  const allergyList = data.allergies.map(allergyLabel).filter(Boolean);
-  const procedureList = data.procedures.map(procedureLabel).filter(Boolean);
-  const reportList = data.reports.map(reportLabel).filter(Boolean);
+  const diagnosisList = unique(conditions.map(conditionLabel)).slice(0, 10);
+  const pastHistory = unique(conditions.map(conditionHistoryLabel)).slice(0, 10);
+  const allergyList = unique(data.allergies.map(allergyLabel)).slice(0, 10);
+  const procedureList = unique(procedures.map(procedureLabel)).slice(0, 10);
+  const reportList = unique(reports.map(reportLabel)).slice(0, 10);
+  const medicationOrders = buildMedicationOrders(medications, data.administrations);
+  const lineTube = buildLineTubeSummary(data.devices, procedures, serviceRequests, observations);
+  const observationSummary = summarizeObservations(observations);
+  const timelineDates = buildTimelineDates(data, latestEncounter);
+  const dailyData = buildDailyData({
+    dates: timelineDates,
+    diagnosisList,
+    pastHistory,
+    allergyList,
+    procedureList,
+    reportList,
+    medicationOrders,
+    lineTube,
+    observationSummary,
+    serviceRequests,
+    carePlans,
+    documents,
+    latestEncounter
+  });
 
-  const patientSummary = {
-    id: patient.id,
-    room: latestEncounter && latestEncounter.id ? latestEncounter.id.slice(0, 8) : "FHIR",
-    name: formatHumanName(patient.name && patient.name[0]) || "Unknown",
-    registrationNo: patient.id,
-    age: patient.birthDate ? String(calculateAge(patient.birthDate)) : "-",
-    gender: (patient.gender || "-").toUpperCase().slice(0, 1) || "-",
-    doctor: encounterParticipant(latestEncounter),
-    diagnosis: diagnosisList[0] || "No active diagnosis",
-    admitDate,
-    bloodType: "-",
-    bodyInfo,
-    isolation: "-",
-    admitReason: latestEncounter && latestEncounter.reasonCode && latestEncounter.reasonCode.length
-      ? codeableText(latestEncounter.reasonCode[0])
-      : (diagnosisList[0] || "External FHIR patient"),
-    admissionRoute: latestEncounter && latestEncounter.class && latestEncounter.class.code
-      ? latestEncounter.class.code
-      : "FHIR",
-    initialComplaint: diagnosisList[0] || "External FHIR patient",
-    admissionNote: buildAdmissionNote(latestEncounter, diagnosisList, allergyList, procedureList),
-    pastHistory: diagnosisList.slice(1, 6),
-    caution: allergyList[0] || "External data",
-    dailyData: buildDailyData({
-      admitDate,
-      vitals,
-      diagnosisList,
-      medications: medicationList,
-      allergyList,
-      procedureList,
-      reportList,
-      observations: observationMap
-    }),
+  return {
+    id: data.patient.id,
+    room: encounterRoom(latestEncounter),
+    name: formatHumanName(data.patient.name && data.patient.name[0]) || "이름 없음",
+    registrationNo: data.patient.id,
+    gender: toGender(data.patient.gender),
+    age: data.patient.birthDate ? String(calculateAge(data.patient.birthDate)) : "-",
+    diagnosis: diagnosisList[0] || "FHIR 진단 정보 없음",
+    admitDate: encounterDate(latestEncounter) || timelineDates[0],
+    bloodType: findBloodType(observations),
+    bodyInfo: buildBodyInfo(observationSummary.latestVital),
+    doctor: encounterDoctor(latestEncounter),
+    isolation: findIsolation(serviceRequests, conditions, documents),
+    admitReason: findAdmitReason(latestEncounter, diagnosisList, procedures),
+    admissionNote: buildAdmissionNote(latestEncounter, diagnosisList, allergyList, procedureList, reportList, serviceRequests, documents),
+    pastHistory,
+    caution: allergyList[0] || findIsolation(serviceRequests, conditions, documents),
+    dailyData,
     external: true
   };
-
-  return patientSummary;
 }
 
 function buildDailyData(input) {
-  const dates = buildDateRange(input.admitDate);
-  const labs = buildLabs(input.observations);
-  const inj = input.medications
-    .filter((name) => /inj|inject|iv|infus|syringe/i.test(name))
-    .map((text) => ({ text, detail: "External FHIR order" }));
-  const po = input.medications
-    .filter((name) => !/inj|inject|iv|infus|syringe/i.test(name))
-    .map((text) => ({ text, detail: "External FHIR order" }));
-  const combinedMeds = [...inj, ...po];
+  const dayMap = {};
 
-  return dates.reduce((acc, date, index) => {
-    const dailyVitals = varyVitals(input.vitals, index);
-    acc[date] = {
-      pastHistory: input.diagnosisList.slice(1, 6),
-      nursingProblem: input.diagnosisList.slice(0, 3).join(", ") || "Ongoing clinical monitoring",
+  input.dates.forEach((date, index) => {
+    const fallbackVital = input.observationSummary.latestVital || defaultVital();
+    const dayVital = input.observationSummary.vitalsByDate[date] || varyVital(fallbackVital, index - (input.dates.length - 1));
+    dayMap[date] = {
+      pastHistory: input.pastHistory.slice(0, 8),
+      nursingProblem: input.diagnosisList.slice(0, 5).join(", ") || "FHIR 간호문제 정보 없음",
       handover: {
-        lines: [],
-        tubes: [],
-        drains: [],
-        drugs: combinedMeds.slice(0, 3),
-        vent: [],
-        neuro: [],
-        etc: input.allergyList.slice(0, 2).map((text) => ({ text, detail: "Allergy / caution" }))
+        lines: input.lineTube.lines,
+        tubes: input.lineTube.tubes,
+        drains: input.lineTube.drains,
+        drugs: input.medicationOrders.running,
+        vent: input.lineTube.vent,
+        neuro: buildNeuroItems(input.diagnosisList, input.carePlans),
+        etc: input.allergyList.slice(0, 2).map((text) => ({ text, detail: "알레르기 / 주의" }))
       },
-      hourly: buildHourlyTimeline(dailyVitals, input.diagnosisList, input.reportList, index),
-      io: { input: 1200, totalOutput: 900 },
-      activity: "Ambulatory / self-care as tolerated",
-      orders: { inj, po },
-      labs,
-      specials: input.reportList.slice(0, 3),
-      docOrders: {
-        routine: input.medications.slice(0, 6),
-        prn: input.allergyList.length ? [`Caution: ${input.allergyList[0]}`] : []
+      hourly: buildHourlyTimeline(date, dayVital, input.observationSummary.eventsByDate[date] || []),
+      io: input.observationSummary.ioByDate[date] || { input: "-", totalOutput: "-" },
+      activity: findActivity(input.carePlans, input.latestEncounter),
+      orders: {
+        inj: input.medicationOrders.inj,
+        po: input.medicationOrders.po
       },
-      todoList: buildTodoList(input),
-      nursingTasks: buildNursingTasks(input),
-      plan: [
-        "Review active diagnoses and medication reconciliation",
-        "Trend recent observations and reports"
-      ],
-      consults: input.reportList[0] || "-",
-      tMax: Number(dailyVitals.bt),
-      vital: dailyVitals
+      labs: input.observationSummary.labsByDate[date] || input.observationSummary.latestLabs || {},
+      specials: buildSpecialsForDate(date, input.reportList, input.procedureList, input.documents),
+      docOrders: buildDoctorOrders(input.medicationOrders, input.serviceRequests, input.carePlans),
+      todoList: buildTodoList(input.diagnosisList, input.serviceRequests, input.carePlans, date, input.dates[input.dates.length - 1]),
+      nursingTasks: buildNursingTasks(input.lineTube, input.carePlans, input.documents),
+      plan: buildPlanItems(input.diagnosisList, input.carePlans, input.serviceRequests),
+      consults: buildConsults(input.serviceRequests, input.carePlans),
+      tMax: Number(dayVital.bt),
+      vital: dayVital
     };
-    return acc;
-  }, {});
+  });
+
+  propagateLabs(dayMap, input.dates);
+  return dayMap;
 }
 
-function buildHourlyTimeline(vitals, diagnosisList, reportList, index) {
-  const notes = [
-    diagnosisList[0] ? `Primary problem: ${diagnosisList[0]}` : "External FHIR patient monitoring",
-    reportList[0] ? `Recent report: ${reportList[0]}` : "No recent diagnostic report"
-  ];
+function summarizeObservations(observations) {
+  const latestVital = {};
+  const vitalsByDate = {};
+  const labsByDate = {};
+  const eventsByDate = {};
+  const ioByDate = {};
 
-  return Array.from({ length: 24 }, (_, hour) => {
-    const time = `${String(hour).padStart(2, "0")}:00`;
-    const event = hour === 9 && index === 0 && diagnosisList[0] ? diagnosisList[0] : "";
-    const hourNotes = [];
-    if (hour === 8) hourNotes.push(notes[0]);
-    if (hour === 14) hourNotes.push(notes[1]);
-    if (hour === 9 && event) hourNotes.push(`[EVENT] ${event}`);
-    if (hour === 10 && event) hourNotes.push("[Action] Review external FHIR record and reassess");
-    if (!hourNotes.length && hour % 6 === 0) hourNotes.push("Monitoring continued");
+  observations.forEach((observation) => {
+    const date = observationDate(observation) || todayIso();
+    const time = observationTime(observation) || "08:00";
+    const label = observationLabel(observation);
+    const value = observationValue(observation);
+    if (!label || !value) return;
+
+    const codes = codingCodes(observation.code);
+    updateVitalValues(latestVital, codes, observation, value);
+
+    if (isVitalObservation(codes)) {
+      if (!vitalsByDate[date]) vitalsByDate[date] = defaultVital();
+      updateVitalValues(vitalsByDate[date], codes, observation, value);
+    }
+
+    if (isLabObservation(observation)) {
+      if (!labsByDate[date]) labsByDate[date] = {};
+      const category = observationCategory(observation) || "검사";
+      if (!labsByDate[date][category]) labsByDate[date][category] = {};
+      labsByDate[date][category][label] = value;
+    }
+
+    if (/input/i.test(label)) {
+      if (!ioByDate[date]) ioByDate[date] = { input: "-", totalOutput: "-" };
+      ioByDate[date].input = value;
+    }
+    if (/output|urine|drain/i.test(label)) {
+      if (!ioByDate[date]) ioByDate[date] = { input: "-", totalOutput: "-" };
+      ioByDate[date].totalOutput = value;
+    }
+
+    if (!eventsByDate[date]) eventsByDate[date] = [];
+    if (isVitalObservation(codes) || isLabObservation(observation) || hasInterpretation(observation)) {
+      eventsByDate[date].push({
+        time,
+        note: `${label}: ${value}`,
+        event: hasInterpretation(observation) ? label : ""
+      });
+    }
+  });
+
+  return {
+    latestVital: finalizeVital(latestVital),
+    latestLabs: latestLabs(labsByDate),
+    vitalsByDate: mapValues(vitalsByDate, finalizeVital),
+    labsByDate,
+    eventsByDate,
+    ioByDate
+  };
+}
+
+function buildMedicationOrders(medications, administrations) {
+  const adminMap = {};
+  administrations.forEach((item) => {
+    const label = medicationAdministrationLabel(item);
+    if (label && !adminMap[label]) adminMap[label] = item;
+  });
+
+  const all = medications.map((medication) => {
+    const label = medicationLabel(medication);
+    const detail = [
+      dosageText(medication),
+      medication.status || "",
+      adminMap[label] ? `투약:${adminMap[label].status || "-"}` : ""
+    ].filter(Boolean).join(" / ");
 
     return {
-      time,
-      vital: vitals,
-      event,
-      notes: hourNotes
+      text: label,
+      detail: detail || "FHIR 처방",
+      prn: isPrnMedication(medication)
     };
+  }).filter((item) => item.text);
+
+  return {
+    all,
+    inj: all.filter((item) => isInjectionLike(item)).map(toDisplayItem),
+    po: all.filter((item) => !isInjectionLike(item)).map(toDisplayItem),
+    running: all.filter((item) => /iv|infusion|drip|pump|continuous/i.test(`${item.text} ${item.detail}`)).map(toDisplayItem)
+  };
+}
+
+function buildLineTubeSummary(devices, procedures, serviceRequests, observations) {
+  const buckets = { lines: [], tubes: [], drains: [], vent: [] };
+  const add = (label, detail) => {
+    if (!label) return;
+    const item = { text: label, detail: detail || "FHIR 정보" };
+    const text = `${label} ${detail}`.toLowerCase();
+    if (/vent|trach|oxygen|intubat|cpap|bipap/i.test(text)) buckets.vent.push(item);
+    else if (/drain|hemovac|jp|chest tube/i.test(text)) buckets.drains.push(item);
+    else if (/tube|catheter|foley|peg|ng|og/i.test(text)) buckets.tubes.push(item);
+    else if (/line|iv|picc|central|port|cvc|arterial/i.test(text)) buckets.lines.push(item);
+  };
+
+  devices.forEach((device) => add(deviceLabel(device), device.status || ""));
+  procedures.forEach((procedure) => add(procedureLabel(procedure), procedure.status || ""));
+  serviceRequests.forEach((request) => add(serviceRequestLabel(request), request.status || ""));
+  observations.forEach((observation) => {
+    const label = observationLabel(observation);
+    if (/line|tube|drain|catheter|vent|oxygen/i.test(label)) add(label, observationValue(observation));
   });
+
+  return {
+    lines: dedupeItems(buckets.lines),
+    tubes: dedupeItems(buckets.tubes),
+    drains: dedupeItems(buckets.drains),
+    vent: dedupeItems(buckets.vent)
+  };
 }
 
-function buildTodoList(input) {
-  return [
-    { text: "Verify active medication list", detail: "Imported from FHIR MedicationRequest", isToday: true },
-    { text: "Review current diagnoses", detail: input.diagnosisList[0] || "No diagnosis found", isToday: true },
-    { text: "Review latest reports", detail: input.reportList[0] || "No report found", isToday: false }
-  ];
-}
+function buildHourlyTimeline(date, dayVital, events) {
+  const hourly = Array.from({ length: 24 }, (_, hour) => ({
+    time: `${String(hour).padStart(2, "0")}:00`,
+    vital: dayVital,
+    event: "",
+    notes: []
+  }));
 
-function buildNursingTasks(input) {
-  return [
-    {
-      text: "Check external demographics",
-      detail: `Source patient ID: ${input.observations.patientId || "FHIR"}`
-    },
-    {
-      text: "Review medication reconciliation",
-      detail: input.medications.slice(0, 3).join(", ") || "No medication request"
+  events.slice(0, 16).forEach((event) => {
+    const hour = clampHour(event.time);
+    hourly[hour].notes.push(event.note);
+    if (event.event && !hourly[hour].event) hourly[hour].event = event.event;
+  });
+
+  hourly.forEach((slot, index) => {
+    if (!slot.notes.length && index % 6 === 0) {
+      slot.notes.push("FHIR 경과 모니터링 기록");
     }
-  ];
+  });
+
+  return hourly;
 }
 
-function buildAdmissionNote(encounter, diagnoses, allergies, procedures) {
+function buildDoctorOrders(medicationOrders, serviceRequests, carePlans) {
+  const routine = unique([
+    ...medicationOrders.all.filter((item) => !item.prn).map((item) => item.text),
+    ...serviceRequests.map((item) => serviceRequestLabel(item)),
+    ...carePlans.map((item) => carePlanTitle(item))
+  ]).slice(0, 12);
+
+  const prn = unique([
+    ...medicationOrders.all.filter((item) => item.prn).map((item) => item.text),
+    ...serviceRequests
+      .map((item) => serviceRequestLabel(item))
+      .filter((text) => /prn|as needed|notify/i.test(text))
+  ]).slice(0, 8);
+
+  return { routine, prn };
+}
+
+function buildTodoList(diagnosisList, serviceRequests, carePlans, date, todayDate) {
+  const items = [];
+
+  diagnosisList.slice(0, 2).forEach((text) => {
+    items.push({ text: "진단 경과 확인", detail: text, isToday: date === todayDate });
+  });
+
+  serviceRequests.slice(0, 3).forEach((item) => {
+    items.push({ text: serviceRequestLabel(item), detail: item.status || "요청 상태 확인", isToday: date === todayDate });
+  });
+
+  carePlans.slice(0, 2).forEach((item) => {
+    items.push({ text: "간호계획 확인", detail: carePlanTitle(item), isToday: false });
+  });
+
+  return items.slice(0, 6);
+}
+
+function buildNursingTasks(lineTube, carePlans, documents) {
+  const tasks = [];
+
+  lineTube.lines.slice(0, 2).forEach((item) => tasks.push({ text: "라인 상태 확인", detail: item.text }));
+  lineTube.tubes.slice(0, 2).forEach((item) => tasks.push({ text: "튜브 상태 확인", detail: item.text }));
+  carePlans.slice(0, 2).forEach((item) => tasks.push({ text: "간호계획 수행 확인", detail: carePlanTitle(item) }));
+  documents.slice(0, 2).forEach((item) => tasks.push({ text: "문서 기록 확인", detail: documentTitle(item) }));
+
+  return tasks.slice(0, 6);
+}
+
+function buildPlanItems(diagnosisList, carePlans, serviceRequests) {
+  return unique([
+    ...diagnosisList.slice(0, 3).map((text) => `${text} 경과 관찰`),
+    ...carePlans.slice(0, 3).map((item) => carePlanTitle(item)),
+    ...serviceRequests.slice(0, 3).map((item) => serviceRequestLabel(item))
+  ]).slice(0, 8);
+}
+
+function buildConsults(serviceRequests, carePlans) {
+  return unique([
+    ...serviceRequests.slice(0, 3).map((item) => serviceRequestLabel(item)),
+    ...carePlans.slice(0, 2).map((item) => carePlanTitle(item))
+  ]).join(", ") || "-";
+}
+
+function buildSpecialsForDate(date, reportList, procedureList, documents) {
+  const docList = documents
+    .filter((item) => documentDate(item) === date)
+    .map((item) => documentTitle(item));
+
+  return unique([
+    ...reportList.slice(0, 3),
+    ...procedureList.slice(0, 3),
+    ...docList.slice(0, 2)
+  ]).slice(0, 8);
+}
+
+function buildNeuroItems(diagnosisList, carePlans) {
+  const items = [];
+  diagnosisList.forEach((text) => {
+    if (/stroke|brain|cerebral|neuro|seizure/i.test(text)) {
+      items.push({ text, detail: "신경계 관찰 필요" });
+    }
+  });
+  carePlans.forEach((item) => {
+    const title = carePlanTitle(item);
+    if (/neuro|gcs|pupil|의식/i.test(title)) {
+      items.push({ text: title, detail: item.status || "care plan" });
+    }
+  });
+  return items.slice(0, 4);
+}
+
+function findAdmitReason(encounter, diagnosisList, procedures) {
+  return codeableText(encounter && encounter.reasonCode && encounter.reasonCode[0]) ||
+    codeableText(encounter && encounter.type && encounter.type[0]) ||
+    diagnosisList[0] ||
+    (procedures[0] && procedureLabel(procedures[0])) ||
+    "FHIR 입원동기 정보 없음";
+}
+
+function buildAdmissionNote(encounter, diagnosisList, allergyList, procedureList, reportList, serviceRequests, documents) {
   const parts = [];
+  const encounterInfo = [
+    codeableText(encounter && encounter.type && encounter.type[0]),
+    codeableText(encounter && encounter.reasonCode && encounter.reasonCode[0]),
+    encounter && encounter.period && encounter.period.start ? encounter.period.start.slice(0, 10) : ""
+  ].filter(Boolean).join(" / ");
 
-  if (encounter && encounter.type && encounter.type.length) {
-    parts.push(`Encounter type: ${codeableText(encounter.type[0])}`);
-  }
-  if (encounter && encounter.period && encounter.period.start) {
-    parts.push(`Started: ${encounter.period.start.slice(0, 10)}`);
-  }
-  if (diagnoses.length) {
-    parts.push(`Problems: ${diagnoses.slice(0, 3).join(", ")}`);
-  }
-  if (allergies.length) {
-    parts.push(`Allergies: ${allergies.slice(0, 2).join(", ")}`);
-  }
-  if (procedures.length) {
-    parts.push(`Procedures: ${procedures.slice(0, 2).join(", ")}`);
-  }
+  if (encounterInfo) parts.push(`입원정보: ${encounterInfo}`);
+  if (diagnosisList.length) parts.push(`진단: ${diagnosisList.slice(0, 4).join(", ")}`);
+  if (allergyList.length) parts.push(`알레르기: ${allergyList.slice(0, 2).join(", ")}`);
+  if (procedureList.length) parts.push(`시술/수술: ${procedureList.slice(0, 3).join(", ")}`);
+  if (reportList.length) parts.push(`검사/판독: ${reportList.slice(0, 2).join(", ")}`);
+  if (serviceRequests.length) parts.push(`요청사항: ${serviceRequests.slice(0, 3).map((item) => serviceRequestLabel(item)).join(", ")}`);
+  if (documents.length) parts.push(`문서: ${documents.slice(0, 2).map((item) => documentTitle(item)).join(", ")}`);
 
-  return parts.join(" | ") || "Imported from external FHIR sandbox";
+  return parts.join(" | ") || "외부 FHIR 기록에서 가져온 입원 정보";
 }
 
-function buildObservationMap(observations) {
-  const map = { patientId: observations[0] && observations[0].subject && observations[0].subject.reference };
-  observations.forEach((obs) => {
-    const codes = codingCodes(obs.code);
-    const value = observationValue(obs);
-    if (!value) return;
+function findActivity(carePlans, encounter) {
+  const carePlanActivity = carePlans
+    .flatMap((item) => item.activity || [])
+    .map((activity) => codeableText(activity.detail && activity.detail.code) || activity.detail?.description || "")
+    .find(Boolean);
 
-    if (matchesAnyCode(codes, VITAL_CODES.systolic) || matchesAnyCode(codes, VITAL_CODES.diastolic)) {
-      if (Array.isArray(obs.component)) {
-        obs.component.forEach((component) => {
-          const componentCodes = codingCodes(component.code);
-          const componentValue = quantityValue(component.valueQuantity);
-          if (matchesAnyCode(componentCodes, VITAL_CODES.systolic) && componentValue) map.systolic = componentValue;
-          if (matchesAnyCode(componentCodes, VITAL_CODES.diastolic) && componentValue) map.diastolic = componentValue;
-        });
-      }
-    }
+  return carePlanActivity || codeableText(encounter && encounter.type && encounter.type[0]) || "활동 정보 없음";
+}
 
-    if (matchesAnyCode(codes, VITAL_CODES.heartRate)) map.heartRate = value;
-    if (matchesAnyCode(codes, VITAL_CODES.bodyTemp)) map.bodyTemp = value;
-    if (matchesAnyCode(codes, VITAL_CODES.spo2)) map.spo2 = value;
-    if (matchesAnyCode(codes, VITAL_CODES.bodyWeight)) map.bodyWeight = value;
-    if (matchesAnyCode(codes, VITAL_CODES.bodyHeight)) map.bodyHeight = value;
+function findIsolation(serviceRequests, conditions, documents) {
+  const texts = unique([
+    ...serviceRequests.map((item) => serviceRequestLabel(item)),
+    ...conditions.map((item) => conditionLabel(item)),
+    ...documents.map((item) => documentTitle(item))
+  ]);
 
-    const label = observationLabel(obs);
-    if (label && typeof value === "string" && !map[label]) {
-      map[label] = value;
-    }
+  return texts.find((text) => /contact|droplet|airborne|isolation|reverse/i.test(text)) || "-";
+}
+
+function findBloodType(observations) {
+  const item = observations.find((observation) => /blood group|abo|rh/i.test(observationLabel(observation)));
+  return item ? observationValue(item) : "-";
+}
+
+function buildBodyInfo(vital) {
+  const weight = vital.weight ? `${Math.round(toNumber(vital.weight, 0))}kg` : "-";
+  const height = vital.height ? `${Math.round(toNumber(vital.height, 0))}cm` : "-";
+  return weight === "-" && height === "-" ? "-" : `${height}/${weight}`;
+}
+
+function encounterRoom(encounter) {
+  return referenceText(encounter && encounter.location && encounter.location[0] && encounter.location[0].location) || "FHIR";
+}
+
+function encounterDoctor(encounter) {
+  return referenceText(encounter && encounter.participant && encounter.participant[0] && encounter.participant[0].individual) || "-";
+}
+
+function buildTimelineDates(data, latestEncounter) {
+  const rawDates = unique([
+    ...data.encounters.map(encounterDate),
+    ...data.conditions.map(conditionDate),
+    ...data.observations.map(observationDate),
+    ...data.medications.map(medicationDate),
+    ...data.procedures.map(procedureDate),
+    ...data.reports.map(reportDate),
+    ...data.serviceRequests.map(serviceRequestDate),
+    ...data.carePlans.map(carePlanDate),
+    ...data.documents.map(documentDate)
+  ].filter(Boolean)).sort();
+
+  const latestDate = rawDates[rawDates.length - 1] || encounterDate(latestEncounter) || todayIso();
+  const dates = rawDates.slice(-TIMELINE_DAYS);
+
+  while (dates.length < TIMELINE_DAYS) {
+    const date = new Date(latestDate);
+    date.setDate(date.getDate() - (TIMELINE_DAYS - dates.length - 1));
+    dates.unshift(date.toISOString().slice(0, 10));
+  }
+
+  return unique(dates).slice(-TIMELINE_DAYS).sort();
+}
+
+function propagateLabs(dayMap, dates) {
+  let lastLabs = {};
+  dates.forEach((date) => {
+    const current = dayMap[date].labs || {};
+    lastLabs = mergeLabs(lastLabs, current);
+    dayMap[date].labs = clone(lastLabs);
   });
-
-  return map;
 }
 
-function buildVitals(map) {
-  const systolic = toNumber(map.systolic, 120);
-  const diastolic = toNumber(map.diastolic, 80);
-  const hr = toNumber(map.heartRate, 78);
-  const bt = toNumber(map.bodyTemp, 36.8).toFixed(1);
-  const spo2 = toNumber(map.spo2, 98);
+function latestLabs(labsByDate) {
+  const dates = Object.keys(labsByDate).sort();
+  return dates.length ? clone(labsByDate[dates[dates.length - 1]]) : {};
+}
 
+function mergeLabs(base, next) {
+  const merged = clone(base);
+  Object.keys(next || {}).forEach((category) => {
+    if (!merged[category]) merged[category] = {};
+    Object.assign(merged[category], next[category]);
+  });
+  return merged;
+}
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value || {}));
+}
+
+function updateVitalValues(target, codes, observation, value) {
+  if (matchesAnyCode(codes, VITAL_CODES.systolic) || matchesAnyCode(codes, VITAL_CODES.diastolic)) {
+    (observation.component || []).forEach((component) => {
+      const componentCodes = codingCodes(component.code);
+      const componentValue = quantityValue(component.valueQuantity);
+      if (matchesAnyCode(componentCodes, VITAL_CODES.systolic) && componentValue) target.systolic = componentValue;
+      if (matchesAnyCode(componentCodes, VITAL_CODES.diastolic) && componentValue) target.diastolic = componentValue;
+    });
+  }
+  if (matchesAnyCode(codes, VITAL_CODES.heartRate)) target.hr = value;
+  if (matchesAnyCode(codes, VITAL_CODES.bodyTemp)) target.bt = value;
+  if (matchesAnyCode(codes, VITAL_CODES.spo2)) target.spo2 = value;
+  if (matchesAnyCode(codes, VITAL_CODES.respiratoryRate)) target.rr = value;
+  if (matchesAnyCode(codes, VITAL_CODES.bodyWeight)) target.weight = value;
+  if (matchesAnyCode(codes, VITAL_CODES.bodyHeight)) target.height = value;
+}
+
+function finalizeVital(vital) {
+  const systolic = toNumber(vital.systolic || "120", 120);
+  const diastolic = toNumber(vital.diastolic || "80", 80);
   return {
     bp: `${Math.round(systolic)}/${Math.round(diastolic)}`,
-    hr: Math.round(hr),
-    bt,
-    spo2: Math.round(spo2)
+    hr: Math.round(toNumber(vital.hr, 80)),
+    bt: toNumber(vital.bt, 36.8).toFixed(1),
+    spo2: Math.round(toNumber(vital.spo2, 98)),
+    rr: Math.round(toNumber(vital.rr, 18)),
+    weight: vital.weight || "",
+    height: vital.height || ""
   };
 }
 
-function buildBodyInfo(map) {
-  const height = map.bodyHeight ? `${Math.round(toNumber(map.bodyHeight, 0))}cm` : "-";
-  const weight = map.bodyWeight ? `${Math.round(toNumber(map.bodyWeight, 0))}kg` : "-";
-  if (height === "-" && weight === "-") return "-";
-  return `${height}/${weight}`;
+function defaultVital() {
+  return finalizeVital({});
 }
 
-function buildLabs(observationMap) {
-  const chemistry = {};
-  const miscKeys = ["Glucose", "Body weight", "Body height", "Body temperature", "Heart rate"];
-
-  miscKeys.forEach((key) => {
-    if (observationMap[key]) chemistry[key] = observationMap[key];
-  });
-
-  chemistry.SpO2 = observationMap.spo2 || "-";
-
-  return { Chemistry: chemistry };
-}
-
-function varyVitals(vitals, index) {
-  const delta = index - (TIMELINE_DAYS - 1);
-  const [sys, dia] = vitals.bp.split("/").map((value) => toNumber(value, 0));
-
+function varyVital(vital, delta) {
+  const [sys, dia] = String(vital.bp || "120/80").split("/");
   return {
-    bp: `${Math.max(80, Math.round(sys + delta))}/${Math.max(50, Math.round(dia + Math.floor(delta / 2)))}`,
-    hr: Math.max(50, vitals.hr + delta),
-    bt: Math.max(35.5, Number(vitals.bt) + delta * 0.02).toFixed(1),
-    spo2: Math.min(100, Math.max(88, vitals.spo2 + Math.floor(delta / 2)))
+    bp: `${Math.max(80, Math.round(toNumber(sys, 120) + delta))}/${Math.max(50, Math.round(toNumber(dia, 80) + delta / 2))}`,
+    hr: Math.max(48, Math.round(toNumber(vital.hr, 80) + delta)),
+    bt: Math.max(35.5, toNumber(vital.bt, 36.8) + delta * 0.03).toFixed(1),
+    spo2: Math.min(100, Math.max(88, Math.round(toNumber(vital.spo2, 98) + delta / 2))),
+    rr: Math.max(10, Math.round(toNumber(vital.rr, 18) + delta / 3)),
+    weight: vital.weight || "",
+    height: vital.height || ""
   };
 }
 
-function buildDateRange(admitDate) {
-  const endDate = new Date(todayIso());
-  const start = isValidDate(admitDate) ? new Date(admitDate) : new Date(endDate);
-  const dates = [];
+function medicationAdministrationLabel(item) {
+  return codeableText(item.medicationCodeableConcept) || referenceText(item.medicationReference) || "";
+}
 
-  for (let i = TIMELINE_DAYS - 1; i >= 0; i -= 1) {
-    const d = new Date(endDate);
-    d.setDate(d.getDate() - i);
-    dates.push(d.toISOString().slice(0, 10));
+function dosageText(medication) {
+  return (medication.dosageInstruction || []).map((item) => {
+    const parts = [
+      item.text || "",
+      codeableText(item.route),
+      timingText(item.timing),
+      quantityValue(item.doseAndRate && item.doseAndRate[0] && item.doseAndRate[0].doseQuantity)
+    ].filter(Boolean);
+    return parts.join(" / ");
+  }).find(Boolean) || "";
+}
+
+function timingText(timing) {
+  if (!timing || !timing.repeat) return "";
+  const repeat = timing.repeat;
+  const items = [];
+  if (repeat.frequency && repeat.period && repeat.periodUnit) {
+    items.push(`${repeat.frequency}회/${repeat.period}${repeat.periodUnit}`);
   }
-
-  if (start > endDate) {
-    return dates;
-  }
-
-  return dates;
+  if (repeat.when && repeat.when.length) items.push(repeat.when.join(", "));
+  return items.join(" / ");
 }
 
-function conditionLabel(condition) {
-  return codeableText(condition.code) || referenceText(condition.subject) || "Condition";
+function isPrnMedication(medication) {
+  return (medication.dosageInstruction || []).some((item) => item.asNeededBoolean || item.asNeededCodeableConcept);
 }
 
-function medicationLabel(medication) {
-  return (
-    codeableText(medication.medicationCodeableConcept) ||
-    referenceText(medication.medicationReference) ||
-    "MedicationRequest"
-  );
+function isInjectionLike(item) {
+  return /iv|inj|infusion|drip|syringe|intraven|subcut|intramus|patch|pump/i.test(`${item.text} ${item.detail}`);
 }
 
-function allergyLabel(allergy) {
-  return codeableText(allergy.code) || "Allergy";
+function toDisplayItem(item) {
+  return { text: item.text, detail: item.detail };
 }
 
-function procedureLabel(procedure) {
-  return codeableText(procedure.code) || "Procedure";
+function dedupeItems(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = `${item.text}|${item.detail}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
-function reportLabel(report) {
-  return codeableText(report.code) || "DiagnosticReport";
+function conditionLabel(item) {
+  return codeableText(item.code) || "진단";
 }
 
-function encounterParticipant(encounter) {
-  const participant = encounter && encounter.participant && encounter.participant[0];
-  if (!participant || !participant.individual) return "-";
-  return participant.individual.display || participant.individual.reference || "-";
+function conditionHistoryLabel(item) {
+  const label = conditionLabel(item);
+  const date = conditionDate(item);
+  return date ? `${label} (${date})` : label;
 }
 
-function formatHumanName(name) {
-  if (!name) return "";
-  if (name.text) return name.text;
-  const given = Array.isArray(name.given) ? name.given.join(" ") : "";
-  const family = name.family || "";
-  return `${given} ${family}`.trim();
+function allergyLabel(item) {
+  const reaction = (item.reaction || [])
+    .flatMap((part) => part.manifestation || [])
+    .map(codeableText)
+    .filter(Boolean)
+    .join(", ");
+  return [codeableText(item.code), reaction].filter(Boolean).join(" / ") || "알레르기";
 }
 
-function calculateAge(birthDate) {
-  const birth = new Date(birthDate);
-  const today = new Date(todayIso());
-  let age = today.getFullYear() - birth.getFullYear();
-  const m = today.getMonth() - birth.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age -= 1;
-  return age;
+function procedureLabel(item) {
+  return codeableText(item.code) || "시술/수술";
 }
 
-function observationValue(observation) {
-  if (observation.valueQuantity) return quantityValue(observation.valueQuantity);
-  if (observation.valueString) return observation.valueString;
-  if (observation.valueCodeableConcept) return codeableText(observation.valueCodeableConcept);
-  return "";
+function reportLabel(item) {
+  return codeableText(item.code) || "검사결과";
 }
 
-function quantityValue(quantity) {
-  if (!quantity || typeof quantity.value === "undefined" || quantity.value === null) return "";
-  const unit = quantity.unit ? ` ${quantity.unit}` : "";
-  return `${quantity.value}${unit}`.trim();
+function medicationLabel(item) {
+  return codeableText(item.medicationCodeableConcept) || referenceText(item.medicationReference) || "처방";
+}
+
+function serviceRequestLabel(item) {
+  return codeableText(item.code) || "서비스 요청";
+}
+
+function carePlanTitle(item) {
+  return item.title || item.description || (item.category || []).map(codeableText).find(Boolean) || "간호계획";
+}
+
+function documentTitle(item) {
+  return item.description || codeableText(item.type) || "문서";
+}
+
+function deviceLabel(item) {
+  return (item.deviceName && item.deviceName[0] && item.deviceName[0].name) || codeableText(item.type) || "기구";
+}
+
+function isVitalObservation(codes) {
+  return Object.values(VITAL_CODES).some((list) => matchesAnyCode(codes, list));
+}
+
+function isLabObservation(observation) {
+  return /laboratory|lab/i.test(observationCategory(observation));
+}
+
+function hasInterpretation(observation) {
+  return !!((observation.interpretation || []).map(codeableText).filter(Boolean).length);
+}
+
+function observationCategory(observation) {
+  return (observation.category || []).map(codeableText).filter(Boolean).join(", ");
 }
 
 function observationLabel(observation) {
   return codeableText(observation.code);
 }
 
+function observationValue(observation) {
+  if (Array.isArray(observation.component) && observation.component.length && /blood pressure/i.test(observationLabel(observation))) {
+    const systolic = observation.component.find((item) => matchesAnyCode(codingCodes(item.code), VITAL_CODES.systolic));
+    const diastolic = observation.component.find((item) => matchesAnyCode(codingCodes(item.code), VITAL_CODES.diastolic));
+    return `${quantityValue(systolic && systolic.valueQuantity) || "-"} / ${quantityValue(diastolic && diastolic.valueQuantity) || "-"}`;
+  }
+  if (observation.valueQuantity) return quantityValue(observation.valueQuantity);
+  if (observation.valueString) return observation.valueString;
+  if (observation.valueCodeableConcept) return codeableText(observation.valueCodeableConcept);
+  if (typeof observation.valueBoolean === "boolean") return observation.valueBoolean ? "예" : "아니오";
+  return "";
+}
+
+function quantityValue(quantity) {
+  if (!quantity || typeof quantity.value === "undefined" || quantity.value === null) return "";
+  return `${quantity.value}${quantity.unit ? ` ${quantity.unit}` : ""}`.trim();
+}
+
+function mapValues(obj, mapper) {
+  return Object.fromEntries(Object.entries(obj).map(([key, value]) => [key, mapper(value)]));
+}
+
+function unique(items) {
+  return [...new Set(items.filter(Boolean))];
+}
+
+function sortDesc(items, dateFn) {
+  return [...items].sort((a, b) => String(dateFn(b) || "").localeCompare(String(dateFn(a) || "")));
+}
+
+function encounterDate(item) {
+  return normalizeDate(item && item.period && (item.period.start || item.period.end));
+}
+
+function conditionDate(item) {
+  return normalizeDate(item && (item.recordedDate || item.onsetDateTime || (item.meta && item.meta.lastUpdated)));
+}
+
+function observationDateTime(item) {
+  return normalizeDate(item && (item.effectiveDateTime || item.issued || (item.meta && item.meta.lastUpdated)));
+}
+
+function observationDate(item) {
+  return observationDateTime(item);
+}
+
+function observationTime(item) {
+  return normalizeTime(item && (item.effectiveDateTime || item.issued || (item.meta && item.meta.lastUpdated)));
+}
+
+function medicationDate(item) {
+  return normalizeDate(item && (item.authoredOn || (item.meta && item.meta.lastUpdated)));
+}
+
+function procedureDate(item) {
+  return normalizeDate(item && (item.performedDateTime || (item.performedPeriod && item.performedPeriod.start) || (item.meta && item.meta.lastUpdated)));
+}
+
+function reportDate(item) {
+  return normalizeDate(item && (item.effectiveDateTime || item.issued || (item.meta && item.meta.lastUpdated)));
+}
+
+function serviceRequestDate(item) {
+  return normalizeDate(item && (item.authoredOn || (item.meta && item.meta.lastUpdated)));
+}
+
+function carePlanDate(item) {
+  return normalizeDate(item && ((item.period && item.period.start) || item.created || (item.meta && item.meta.lastUpdated)));
+}
+
+function documentDate(item) {
+  return normalizeDate(item && (item.date || (item.meta && item.meta.lastUpdated)));
+}
+
+function normalizeDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+}
+
+function normalizeTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(11, 16);
+}
+
+function codeableText(item) {
+  if (!item) return "";
+  if (typeof item === "string") return item;
+  if (item.text) return item.text;
+  const coding = item.coding && item.coding[0];
+  return coding ? (coding.display || coding.code || "") : "";
+}
+
+function referenceText(item) {
+  if (!item) return "";
+  if (typeof item === "string") return item;
+  return item.display || item.reference || "";
+}
+
 function codingCodes(codeable) {
-  return ((codeable && codeable.coding) || []).map((coding) => coding.code).filter(Boolean);
+  return ((codeable && codeable.coding) || []).map((item) => item.code).filter(Boolean);
 }
 
-function matchesAnyCode(actualCodes, expectedCodes) {
-  return actualCodes.some((code) => expectedCodes.includes(code));
+function matchesAnyCode(actual, expected) {
+  return actual.some((item) => expected.includes(item));
 }
 
-function codeableText(codeable) {
-  if (!codeable) return "";
-  if (codeable.text) return codeable.text;
-  const coding = codeable.coding && codeable.coding[0];
-  if (!coding) return "";
-  return coding.display || coding.code || "";
+function toGender(value) {
+  if (!value) return "-";
+  if (/^m/i.test(value)) return "M";
+  if (/^f/i.test(value)) return "F";
+  return value.toUpperCase().slice(0, 1);
 }
 
-function referenceText(reference) {
-  if (!reference) return "";
-  return reference.display || reference.reference || "";
+function formatHumanName(name) {
+  if (!name) return "";
+  if (name.text) return name.text;
+  const given = Array.isArray(name.given) ? name.given.join(" ") : "";
+  return `${given} ${name.family || ""}`.trim();
+}
+
+function calculateAge(birthDate) {
+  const birth = new Date(birthDate);
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const month = today.getMonth() - birth.getMonth();
+  if (month < 0 || (month === 0 && today.getDate() < birth.getDate())) age -= 1;
+  return age;
 }
 
 function toNumber(value, fallback) {
@@ -473,12 +873,14 @@ function toNumber(value, fallback) {
   return match ? Number(match[0]) : fallback;
 }
 
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+function clampHour(value) {
+  const hour = parseInt(String(value || "08:00").slice(0, 2), 10);
+  if (Number.isNaN(hour)) return 8;
+  return Math.max(0, Math.min(23, hour));
 }
 
-function isValidDate(value) {
-  return !Number.isNaN(new Date(value).getTime());
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function jsonResponse(statusCode, body) {
