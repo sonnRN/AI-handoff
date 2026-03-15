@@ -271,6 +271,8 @@ async function updateDashboard(pid) {
   setText('pDoc', p.doctor);
   setText('pIso', p.isolation);
   setText('pHD', `HD #${getHD(p.admitDate, dateKey)}`);
+  setHTML('allergyBadges', renderAllergyBadges(p));
+  setHTML('cautionCard', renderCautionCard(p, data));
 
   setHTML('admitReason', `<div style="max-height:110px; overflow-y:auto; font-size:13px; line-height:1.55;">${formatMultilineText(p.admissionNote || p.admitReason)}</div>`);
   setHTML('nursingProblem', formatMultilineText(data.nursingProblem));
@@ -298,6 +300,7 @@ async function updateDashboard(pid) {
 
   setHTML('injList', renderMedList(inj));
   setHTML('poList', renderMedList(po));
+  setHTML('medScheduleList', renderMedSchedule(data.medSchedule || [], [...inj, ...po]));
 
   // 🩸 Lab Results (Clickable Categories)
   const labs = data.labs || {};
@@ -681,6 +684,46 @@ function formatLabValue(value) {
   const text = String(value);
   if (/^-?\d+(\.\d+)?$/.test(text)) return Number(text).toFixed(2);
   return text.replace(/(-?\d+\.\d{2})\d+/g, '$1');
+}
+
+function renderAllergyBadges(patient) {
+  const items = patient.allergies || patient.pastAllergies || [];
+  if (!items.length) {
+    return '<span class="flag-badge" style="background:#eceff1; color:#455a64; border-color:#cfd8dc;">알레르기 정보 없음</span>';
+  }
+  return items.slice(0, 5).map(item => `<span class="flag-badge">${item}</span>`).join('');
+}
+
+function renderCautionCard(patient, data) {
+  const parts = [];
+  if (patient.isolation && patient.isolation !== '-') parts.push(`격리: ${patient.isolation}`);
+  if (patient.caution && patient.caution !== '-') parts.push(`주의: ${patient.caution}`);
+  if (data.docOrders?.prn?.length) parts.push(`알림: ${data.docOrders.prn[0]}`);
+  return parts.length ? parts.map(item => `<div>${item}</div>`).join('') : '주의사항 정보 없음';
+}
+
+function renderMedSchedule(schedule, meds) {
+  const rows = schedule.length ? schedule : meds.slice(0, 8).map(item => {
+    const text = typeof item === 'string' ? item : item.text;
+    const detail = typeof item === 'string' ? '' : (item.detail || '정규 투약');
+    return { time: inferScheduleTime(detail), name: text, detail };
+  });
+
+  if (!rows.length) return '-';
+
+  const body = rows.map(row => `<tr><td>${row.time || '-'}</td><td>${row.name}</td><td>${row.detail || '-'}</td></tr>`).join('');
+  return `<table class="schedule-table"><thead><tr><th>시간</th><th>약물</th><th>비고</th></tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function inferScheduleTime(detail) {
+  const text = String(detail || '').toUpperCase();
+  if (text.includes('BID')) return '09:00 / 21:00';
+  if (text.includes('TID')) return '09:00 / 13:00 / 18:00';
+  if (text.includes('QID')) return '09:00 / 13:00 / 17:00 / 21:00';
+  if (text.includes('HS')) return '22:00';
+  if (text.includes('PRN')) return '필요시';
+  if (text.includes('IV')) return '정규 시간 확인';
+  return '09:00';
 }
 
 function sortLabCategories(categories) {

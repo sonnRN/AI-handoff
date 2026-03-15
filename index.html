@@ -17,7 +17,7 @@
 
   <div class="timeline-bar" style="background:#eef2f5; padding:12px 20px; border-bottom:1px solid #ccc; display:flex; align-items:center; gap:15px;">
     <div style="text-align:center; min-width:110px;">
-      <div id="dDayDisplay" style="font-size:11px; color:#666; font-weight:bold;">Today</div>
+      <div id="dDayDisplay" style="font-size:11px; color:#666; font-weight:bold;">오늘</div>
       <div id="currentDateDisplay" style="font-weight:800; color:#1a237e; font-size:16px;">2025-12-02</div>
     </div>
     <div style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:flex-end;">
@@ -47,6 +47,13 @@
       <div class="info-cell"><b>입원일:</b> <span id="pAdmit">-</span></div>
       <div class="info-cell"><b>주치의:</b> <span id="pDoc">-</span></div>
       <div class="info-cell"><b>격리:</b> <span id="pIso">-</span></div>
+    </div>
+    <div class="patient-flag-row">
+      <div class="allergy-strip">
+        <span class="flag-label">알레르기</span>
+        <div id="allergyBadges" class="flag-badges">-</div>
+      </div>
+      <div id="cautionCard" class="caution-card">주의사항 정보 없음</div>
     </div>
   </div>
 
@@ -105,6 +112,10 @@
             <div class="sub-header">경구약 (PO)</div>
             <div id="poList" style="font-size:12px;">-</div>
           </div>
+          <div class="sub-section">
+            <div class="sub-header">투약 스케줄</div>
+            <div class="sub-content scrollable" id="medScheduleList" style="height:120px;">-</div>
+          </div>
           <div class="card" style="flex:1; display:flex; flex-direction:column; margin-top:10px;">
             <div class="card-header">주치의 처방 / PRN Order</div>
             <div id="docOrderList" style="flex:1; overflow-y:auto; padding:10px; font-size:12px;">-</div>
@@ -148,7 +159,6 @@
       <span class="ai-panel-header-title">AI 스마트 인계</span>
       <button class="ai-panel-close" id="aiPanelClose">×</button>
     </div>
-
     <div class="ai-range-selector">
       <label>분석 기간:</label>
       <select id="aiRangeStart"></select>
@@ -156,15 +166,12 @@
       <select id="aiRangeEnd"></select>
       <button id="aiRangeApplyBtn">분석</button>
     </div>
-
     <div class="ai-panel-patient" id="aiPanelPatient">환자를 선택해주세요</div>
-
     <div class="ai-tabs">
       <button class="ai-tab-btn active" data-tab="summary">AI 요약</button>
       <button class="ai-tab-btn" data-tab="check">직접 확인</button>
       <button class="ai-tab-btn" data-tab="todo">할 일</button>
     </div>
-
     <div class="ai-panel-body">
       <div id="tab-summary" class="ai-tab-content active">
         <div class="ai-placeholder">기간을 선택한 뒤 분석 버튼을 눌러주세요.</div>

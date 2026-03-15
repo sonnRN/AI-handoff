@@ -181,6 +181,7 @@ function normalizePatientDetail(data) {
     admitReason: findAdmitReason(latestEncounter, diagnosisList, procedures),
     admissionNote: buildAdmissionNote(latestEncounter, diagnosisList, allergyList, procedureList, reportList, serviceRequests, documents),
     pastHistory,
+    allergies: allergyList,
     caution: allergyList[0] || findIsolation(serviceRequests, conditions, documents),
     dailyData,
     external: true
@@ -215,6 +216,7 @@ function buildDailyData(input) {
       labs: input.observationSummary.labsByDate[date] || input.observationSummary.latestLabs || {},
       specials: buildSpecialsForDate(date, input.reportList, input.procedureList, input.documents),
       docOrders: buildDoctorOrders(input.medicationOrders, input.serviceRequests, input.carePlans),
+      medSchedule: buildMedicationSchedule(input.medicationOrders),
       todoList: buildTodoList(input.diagnosisList, input.serviceRequests, input.carePlans, date, input.dates[input.dates.length - 1]),
       nursingTasks: buildNursingTasks(input.lineTube, input.carePlans, input.documents),
       plan: buildPlanItems(input.diagnosisList, input.carePlans, input.serviceRequests),
@@ -382,6 +384,25 @@ function buildDoctorOrders(medicationOrders, serviceRequests, carePlans) {
   ]).slice(0, 8);
 
   return { routine, prn };
+}
+
+function buildMedicationSchedule(medicationOrders) {
+  return medicationOrders.all.slice(0, 8).map((item) => ({
+    time: inferMedicationTime(item.detail),
+    name: item.text,
+    detail: item.detail
+  }));
+}
+
+function inferMedicationTime(detail) {
+  const text = String(detail || '').toUpperCase();
+  if (text.includes('BID')) return '09:00 / 21:00';
+  if (text.includes('TID')) return '09:00 / 13:00 / 18:00';
+  if (text.includes('QID')) return '09:00 / 13:00 / 17:00 / 21:00';
+  if (text.includes('HS')) return '22:00';
+  if (text.includes('PRN')) return '필요시';
+  if (text.includes('IV')) return '정규 시간 확인';
+  return '09:00';
 }
 
 function buildTodoList(diagnosisList, serviceRequests, carePlans, date, todayDate) {

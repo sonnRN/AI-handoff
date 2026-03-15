@@ -115,6 +115,56 @@ body {
   margin-bottom: 0;
 }
 
+.patient-flag-row {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+  margin-top: 8px;
+}
+
+.allergy-strip {
+  flex: 2;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.flag-label {
+  min-width: 64px;
+  font-weight: bold;
+  color: #333;
+  padding-top: 4px;
+}
+
+.flag-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.flag-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: bold;
+  background: #ffe8e8;
+  color: #b71c1c;
+  border: 1px solid #ef9a9a;
+}
+
+.caution-card {
+  flex: 1;
+  border: 1px solid #d8b56a;
+  background: linear-gradient(180deg, #fff8e1, #ffefc1);
+  color: #6d4c00;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-weight: bold;
+  line-height: 1.45;
+}
+
 .info-cell {
   font-size: 13px;
   padding: 2px 0;
@@ -300,6 +350,23 @@ textarea {
 .sub-content.scrollable {
   max-height: 120px;
   overflow-y: auto;
+}
+
+.schedule-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.schedule-table th,
+.schedule-table td {
+  border: 1px solid #dcdcdc;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.schedule-table th {
+  background: #f3f6fb;
 }
 
 /* ===== 처방 항목 스타일 ===== */
