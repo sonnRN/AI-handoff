@@ -544,28 +544,14 @@ function encounterDoctor(encounter) {
 }
 
 function buildTimelineDates(data, latestEncounter) {
-  const rawDates = unique([
-    ...data.encounters.map(encounterDate),
-    ...data.conditions.map(conditionDate),
-    ...data.observations.map(observationDate),
-    ...data.medications.map(medicationDate),
-    ...data.procedures.map(procedureDate),
-    ...data.reports.map(reportDate),
-    ...data.serviceRequests.map(serviceRequestDate),
-    ...data.carePlans.map(carePlanDate),
-    ...data.documents.map(documentDate)
-  ].filter(Boolean)).sort();
-
-  const latestDate = rawDates[rawDates.length - 1] || encounterDate(latestEncounter) || todayIso();
-  const dates = rawDates.slice(-TIMELINE_DAYS);
-
-  while (dates.length < TIMELINE_DAYS) {
-    const date = new Date(latestDate);
-    date.setDate(date.getDate() - (TIMELINE_DAYS - dates.length - 1));
-    dates.unshift(date.toISOString().slice(0, 10));
+  const today = new Date(`${todayIso()}T00:00:00+09:00`);
+  const dates = [];
+  for (let i = TIMELINE_DAYS - 1; i >= 0; i -= 1) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    dates.push(normalizeDate(date));
   }
-
-  return unique(dates).slice(-TIMELINE_DAYS).sort();
+  return dates;
 }
 
 function propagateLabs(dayMap, dates) {
@@ -972,6 +958,7 @@ function todayIso() {
 function buildDailyData(input) {
   const administrationEvents = buildAdministrationEventsByDate(input.administrations || []);
   const reportEvents = buildReportEventsByDate(input.documents || [], input.reportList || []);
+  const nursingTaskEvents = buildNursingTaskEventsByDate(input.dates, input.lineTube, input.carePlans, input.serviceRequests);
   const dayMap = {};
 
   input.dates.forEach((date, index) => {
@@ -980,7 +967,8 @@ function buildDailyData(input) {
     const eventNotes = [
       ...(input.observationSummary.eventsByDate[date] || []),
       ...(administrationEvents[date] || []),
-      ...(reportEvents[date] || [])
+      ...(reportEvents[date] || []),
+      ...(nursingTaskEvents[date] || [])
     ];
 
     dayMap[date] = {
@@ -1112,6 +1100,54 @@ function buildReportEventsByDate(documents, reportList) {
       note: `판독 확인: ${item}`,
       event: ""
     });
+  });
+
+  return byDate;
+}
+
+function buildNursingTaskEventsByDate(dates, lineTube, carePlans, serviceRequests) {
+  const byDate = {};
+
+  dates.forEach((date, index) => {
+    const items = [];
+
+    lineTube.lines.slice(0, 2).forEach((item) => {
+      items.push({
+        time: "07:30",
+        nurse: fallbackNurseName(index),
+        note: `${item.text} 라인 부위 사정 및 고정 상태 확인함`,
+        event: ""
+      });
+    });
+
+    lineTube.tubes.slice(0, 2).forEach((item) => {
+      items.push({
+        time: "10:30",
+        nurse: fallbackNurseName(index + 1),
+        note: `${item.text} 유지 상태 확인 및 배액/유출 여부 관찰함`,
+        event: ""
+      });
+    });
+
+    carePlans.slice(0, 2).forEach((item, careIndex) => {
+      items.push({
+        time: careIndex === 0 ? "14:00" : "18:00",
+        nurse: fallbackNurseName(index + 2 + careIndex),
+        note: `간호계획 수행함: ${carePlanTitle(item)}`,
+        event: ""
+      });
+    });
+
+    serviceRequests.slice(0, 2).forEach((item, requestIndex) => {
+      items.push({
+        time: requestIndex === 0 ? "11:00" : "16:00",
+        nurse: fallbackNurseName(index + 4 + requestIndex),
+        note: `검사/처치 준비 및 시행 여부 확인함: ${serviceRequestLabel(item)}`,
+        event: ""
+      });
+    });
+
+    byDate[date] = items;
   });
 
   return byDate;

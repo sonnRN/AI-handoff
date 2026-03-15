@@ -331,7 +331,7 @@ textarea {
 .sub-header {
   background: #e8e8e8;
   padding: 3px 6px;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: bold;
   border: 1px solid #ccc;
   border-bottom: none;
@@ -340,7 +340,7 @@ textarea {
 
 .sub-content {
   padding: 4px 6px;
-  font-size: 10px;
+  font-size: 13px;
   line-height: 1.5;
   border: 1px solid #ccc;
   background: #fff;
