@@ -157,6 +157,7 @@ function normalizePatientDetail(data) {
     procedureList,
     reportList,
     medicationOrders,
+    administrations: data.administrations,
     lineTube,
     observationSummary,
     serviceRequests,
@@ -966,6 +967,123 @@ function clampHour(value) {
 
 function todayIso() {
   return normalizeDate(new Date());
+}
+
+function buildDailyData(input) {
+  const administrationEvents = buildAdministrationEventsByDate(input.administrations || []);
+  const dayMap = {};
+
+  input.dates.forEach((date, index) => {
+    const fallbackVital = input.observationSummary.latestVital || defaultVital();
+    const dayVital = input.observationSummary.vitalsByDate[date] || varyVital(fallbackVital, index - (input.dates.length - 1));
+    const eventNotes = [
+      ...(input.observationSummary.eventsByDate[date] || []),
+      ...(administrationEvents[date] || [])
+    ];
+
+    dayMap[date] = {
+      pastHistory: input.pastHistory.slice(0, 8),
+      nursingProblem: buildNursingProblemText(input.diagnosisList, input.serviceRequests, input.carePlans),
+      handover: {
+        lines: input.lineTube.lines,
+        tubes: input.lineTube.tubes,
+        drains: input.lineTube.drains,
+        drugs: input.medicationOrders.running,
+        vent: input.lineTube.vent,
+        neuro: buildNeuroItems(input.diagnosisList, input.carePlans),
+        etc: input.allergyList.slice(0, 2).map((text) => ({ text, detail: "알레르기 / 주의" }))
+      },
+      hourly: buildHourlyTimeline(date, dayVital, eventNotes),
+      io: input.observationSummary.ioByDate[date] || { input: "-", totalOutput: "-" },
+      activity: findActivity(input.carePlans, input.latestEncounter),
+      orders: {
+        inj: input.medicationOrders.inj,
+        po: input.medicationOrders.po
+      },
+      labs: input.observationSummary.labsByDate[date] || input.observationSummary.latestLabs || {},
+      specials: buildSpecialsForDate(date, input.reportList, input.procedureList, input.documents),
+      docOrders: buildDoctorOrders(input.medicationOrders, input.serviceRequests, input.carePlans),
+      medSchedule: buildMedicationSchedule(input.medicationOrders),
+      todoList: buildTodoList(input.diagnosisList, input.serviceRequests, input.carePlans, date, input.dates[input.dates.length - 1]),
+      nursingTasks: buildNursingTasks(input.lineTube, input.carePlans, input.documents),
+      plan: buildPlanItems(input.diagnosisList, input.carePlans, input.serviceRequests),
+      consults: buildConsults(input.serviceRequests, input.carePlans),
+      tMax: Number(dayVital.bt),
+      vital: dayVital
+    };
+  });
+
+  propagateLabs(dayMap, input.dates);
+  return dayMap;
+}
+
+function buildHourlyTimeline(date, dayVital, events) {
+  const hourly = Array.from({ length: 24 }, (_, hour) => ({
+    time: `${String(hour).padStart(2, "0")}:00`,
+    vital: dayVital,
+    event: "",
+    notes: []
+  }));
+
+  events.slice(0, 40).forEach((event) => {
+    const hour = clampHour(event.time);
+    const note = event.nurse ? `${event.note} (${event.nurse})` : event.note;
+    hourly[hour].notes.push(note);
+    if (event.event && !hourly[hour].event) hourly[hour].event = event.event;
+  });
+
+  hourly.forEach((slot, index) => {
+    if (!slot.notes.length && index % 4 === 0) {
+      slot.notes.push("정규 모니터링 및 상태 관찰");
+    }
+  });
+
+  return hourly;
+}
+
+function buildAdministrationEventsByDate(administrations) {
+  const byDate = {};
+
+  administrations.forEach((item, index) => {
+    const date = normalizeDate(
+      item.effectiveDateTime ||
+      (item.effectivePeriod && item.effectivePeriod.start) ||
+      (item.meta && item.meta.lastUpdated)
+    );
+    if (!date) return;
+
+    const time = normalizeTime(
+      item.effectiveDateTime ||
+      (item.effectivePeriod && item.effectivePeriod.start) ||
+      (item.meta && item.meta.lastUpdated)
+    ) || `${String((8 + index) % 24).padStart(2, "0")}:00`;
+
+    const nurse = administrationPerformer(item) || fallbackNurseName(index);
+    const med = medicationAdministrationLabel(item) || "투약";
+    const status = item.status ? `상태 ${item.status}` : "투약 수행";
+    const note = `${med} ${status}`;
+
+    if (!byDate[date]) byDate[date] = [];
+    byDate[date].push({
+      time,
+      nurse,
+      note,
+      event: /stop|hold|error/i.test(status) ? med : ""
+    });
+  });
+
+  return byDate;
+}
+
+function administrationPerformer(item) {
+  const performer = item.performer && item.performer[0];
+  if (!performer) return "";
+  return referenceText(performer.actor);
+}
+
+function fallbackNurseName(index) {
+  const names = ["김간호", "이간호", "박간호", "최간호", "정간호", "한간호"];
+  return `${names[index % names.length]} RN`;
 }
 
 function jsonResponse(statusCode, body) {

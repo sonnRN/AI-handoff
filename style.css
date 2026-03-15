@@ -348,7 +348,7 @@ textarea {
 }
 
 .sub-content.scrollable {
-  max-height: 120px;
+  max-height: none;
   overflow-y: auto;
 }
 

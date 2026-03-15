@@ -1137,3 +1137,120 @@ function saveRecord() { alert("저장됨"); closeAllModals(); }
 function setText(id, val) { const el = document.getElementById(id); if (el) el.textContent = val || '-'; }
 function setHTML(id, val) { const el = document.getElementById(id); if (el) el.innerHTML = val || '-'; }
 function getHD(start, current) { return Math.floor((new Date(current) - new Date(start)) / (1000 * 60 * 60 * 24)) + 1; }
+
+updateDashboard = async function (pid) {
+  let p = null;
+
+  try {
+    p = await getPatientData(pid);
+  } catch (error) {
+    console.error(error);
+    return;
+  }
+
+  if (!p) return;
+  syncDateList(p);
+  const dateKey = dateList[currentDateIndex];
+  const data = p.dailyData ? p.dailyData[dateKey] : null;
+  if (!data) return;
+
+  setText('pName', p.name);
+  setText('pRegNo', p.registrationNo);
+  setText('pAge', `${p.gender}/${p.age}`);
+  setText('pBlood', p.bloodType);
+  setText('pBody', p.bodyInfo);
+  setHTML('pDiag', p.diagnosis);
+  setText('pAdmit', p.admitDate);
+  setText('pDoc', p.doctor);
+  setText('pIso', p.isolation);
+  setText('pHD', `HD #${getHD(p.admitDate, dateKey)}`);
+  setHTML('allergyBadges', renderAllergyBadges(p));
+  setHTML('cautionCard', renderCautionCard(p, data));
+
+  const historyStr = (data.pastHistory || []).map(item => `<div>• ${item}</div>`).join('');
+  setHTML('pastHistoryList', historyStr || '-');
+  setHTML('admitReason', `<div style="max-height:120px; overflow-y:auto; font-size:13px; line-height:1.6;">${formatMultilineText(p.admissionNote || p.admitReason)}</div>`);
+  setHTML('nursingProblem', formatMultilineText(data.nursingProblem));
+
+  const handover = data.handover || {};
+  const currentLineTube = [...(handover.lines || []), ...(handover.tubes || []), ...(handover.drains || []), ...(handover.vent || [])];
+  setHTML('lineTube', renderSimpleList(currentLineTube));
+
+  const hourly = data.hourly || [];
+  const vsFlow = hourly
+    .filter((entry, index) => index % 4 === 0 || entry.event)
+    .map(entry => {
+      const style = entry.event ? 'color:#c62828; font-weight:bold; background-color:#ffebee;' : '';
+      return `<div style="font-size:13px; margin-bottom:2px; padding:2px; ${style}">[${entry.time}] BP:${entry.vital.bp} / P:${entry.vital.hr} / T:${entry.vital.bt} / SpO2:${entry.vital.spo2 || '-'}%</div>`;
+    }).join('');
+  setHTML('vitalSign', vsFlow || '데이터 없음');
+
+  setHTML('ioActivity', `
+    <div><b>총 I/O:</b> ${data.io?.input || '-'} / ${data.io?.totalOutput || '-'}</div>
+    <div style="margin-top:4px;"><b>활동:</b> ${data.activity || '-'}</div>
+  `);
+
+  const inj = data.orders?.inj || [];
+  const po = data.orders?.po || [];
+  setHTML('injList', renderMedList(inj));
+  setHTML('poList', renderMedList(po));
+  setHTML('medScheduleList', renderMedSchedule(data.medSchedule || [], [...inj, ...po]));
+
+  const labs = data.labs || {};
+  setHTML('labResult', renderLabSummary(p.id, labs));
+  setHTML('labSpecial', (data.specials || []).map(item => `• ${item}`).join('<br>') || '-');
+
+  const notesHtml = hourly.flatMap(entry => (entry.notes || []).map(note => `
+    <div style="border-bottom:1px solid #eee; padding:6px 0; font-size:13px; line-height:1.6;">
+      <span style="color:#1976d2; font-weight:bold;">[${entry.time}]</span>
+      <span>${note}</span>
+    </div>
+  `)).join('');
+  setHTML('nursingNoteDisplay', notesHtml || '기록 없음');
+
+  const doc = data.docOrders || { routine: [], prn: [] };
+  let docHtml = '';
+  if (doc.routine.length) {
+    docHtml += `<div style="margin-bottom:6px;"><div style="color:#2e7d32; font-weight:bold; margin-bottom:2px;">[정규 처방]</div>${doc.routine.map(r => `<div>• ${r}</div>`).join('')}</div>`;
+  }
+  if (doc.prn.length) {
+    docHtml += `<div><div style="color:#d81b60; font-weight:bold; margin-bottom:2px;">[PRN / Notify]</div>${doc.prn.map(r => `<div>• ${r}</div>`).join('')}</div>`;
+  }
+  setHTML('docOrderList', docHtml || '특이 처방 없음');
+
+  const aiPtDiv = document.getElementById('aiPanelPatient');
+  if (aiPtDiv) aiPtDiv.textContent = `${p.name} (${p.age}/${p.gender}) - ${p.diagnosis}`;
+};
+
+openAIPanel = function () {
+  if (!selectedPatientId) return alert("환자를 먼저 선택해주세요.");
+  document.getElementById('aiPanel').classList.add('active');
+  document.getElementById('overlay').classList.add('active');
+  aiPanelOpen = true;
+  runAIRangeAnalysis(selectedPatientId);
+};
+
+openAddRecordModal = function () {
+  if (!selectedPatientId) return;
+  const now = getKoreanNowParts();
+  document.getElementById('addRecordModal').classList.add('active');
+  document.getElementById('modalOverlay').classList.add('active');
+  document.getElementById('recordTime').value = `${dateList[currentDateIndex]} ${now.time}`;
+};
+
+saveRecord = function () {
+  alert("저장되었습니다.");
+  closeAllModals();
+};
+
+renderMedList = function (arr) {
+  return (arr || []).map(d => {
+    const text = typeof d === 'string' ? d : d.text;
+    const detail = d && d.detail ? `<span style="font-size:12px; color:#666; display:block; padding-left:14px;">- ${d.detail}</span>` : '';
+    return `<div style="margin-bottom:4px;">• ${text}${detail}</div>`;
+  }).join('') || '-';
+};
+
+renderSimpleList = function (arr) {
+  return (arr || []).map(i => typeof i === 'string' ? `• ${i}` : `• ${i.text}${i.detail ? ` (${i.detail})` : ''}`).join('<br>');
+};
