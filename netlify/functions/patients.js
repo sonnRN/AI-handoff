@@ -145,19 +145,25 @@ function normalizePatientDetail(data) {
   const allergyList = unique(data.allergies.map(allergyLabel)).slice(0, 10);
   const procedureList = unique(procedures.map(procedureLabel)).slice(0, 10);
   const reportList = unique(reports.map(reportLabel)).slice(0, 10);
+  const timelineDates = buildTimelineDates(data, latestEncounter);
+  const dateMap = buildSourceDateMap(data, timelineDates);
   const medicationOrders = buildMedicationOrders(medications, data.administrations);
   const lineTube = buildLineTubeSummary(data.devices, procedures, serviceRequests, observations);
-  const observationSummary = summarizeObservations(observations);
-  const timelineDates = buildTimelineDates(data, latestEncounter);
+  const observationSummary = summarizeObservations(observations, dateMap);
   const dailyData = buildDailyData({
     dates: timelineDates,
+    dateMap,
     diagnosisList,
     pastHistory,
     allergyList,
     procedureList,
     reportList,
     medicationOrders,
+    conditions,
+    medications,
     administrations: data.administrations,
+    reports,
+    procedures,
     lineTube,
     observationSummary,
     serviceRequests,
@@ -197,31 +203,41 @@ function buildDailyData(input) {
     const dayVital = input.observationSummary.vitalsByDate[date] || varyVital(fallbackVital, index - (input.dates.length - 1));
     dayMap[date] = {
       pastHistory: input.pastHistory.slice(0, 8),
-      nursingProblem: buildNursingProblemText(input.diagnosisList, input.serviceRequests, input.carePlans),
+      nursingProblem: buildNursingProblemText(
+        dailyDiagnosisList.length ? dailyDiagnosisList : input.diagnosisList,
+        dailyServiceRequests,
+        dailyCarePlans
+      ),
       handover: {
         lines: input.lineTube.lines,
         tubes: input.lineTube.tubes,
         drains: input.lineTube.drains,
-        drugs: input.medicationOrders.running,
+        drugs: dailyMedicationOrders.running,
         vent: input.lineTube.vent,
-        neuro: buildNeuroItems(input.diagnosisList, input.carePlans),
+        neuro: buildNeuroItems(dailyDiagnosisList.length ? dailyDiagnosisList : input.diagnosisList, dailyCarePlans),
         etc: input.allergyList.slice(0, 2).map((text) => ({ text, detail: "알레르기 / 주의" }))
       },
       hourly: buildHourlyTimeline(date, dayVital, input.observationSummary.eventsByDate[date] || []),
       io: input.observationSummary.ioByDate[date] || { input: "-", totalOutput: "-" },
-      activity: findActivity(input.carePlans, input.latestEncounter),
+      activity: findActivity(dailyCarePlans.length ? dailyCarePlans : input.carePlans, input.latestEncounter),
       orders: {
-        inj: input.medicationOrders.inj,
-        po: input.medicationOrders.po
+        inj: dailyMedicationOrders.inj,
+        po: dailyMedicationOrders.po
       },
       labs: input.observationSummary.labsByDate[date] || input.observationSummary.latestLabs || {},
-      specials: buildSpecialsForDate(date, input.reportList, input.procedureList, input.documents),
-      docOrders: buildDoctorOrders(input.medicationOrders, input.serviceRequests, input.carePlans),
-      medSchedule: buildMedicationSchedule(input.medicationOrders),
-      todoList: buildTodoList(input.diagnosisList, input.serviceRequests, input.carePlans, date, input.dates[input.dates.length - 1]),
-      nursingTasks: buildNursingTasks(input.lineTube, input.carePlans, input.documents),
-      plan: buildPlanItems(input.diagnosisList, input.carePlans, input.serviceRequests),
-      consults: buildConsults(input.serviceRequests, input.carePlans),
+      specials: buildSpecialsForDate(dailyReports, dailyProcedures, dailyDocuments),
+      docOrders: buildDoctorOrders(dailyMedicationOrders, dailyServiceRequests, dailyCarePlans),
+      medSchedule: buildMedicationSchedule(dailyMedicationOrders),
+      todoList: buildTodoList(
+        dailyDiagnosisList.length ? dailyDiagnosisList : input.diagnosisList,
+        dailyServiceRequests,
+        dailyCarePlans,
+        date,
+        input.dates[input.dates.length - 1]
+      ),
+      nursingTasks: buildNursingTasks(input.lineTube, dailyCarePlans, dailyDocuments),
+      plan: buildPlanItems(dailyDiagnosisList.length ? dailyDiagnosisList : input.diagnosisList, dailyCarePlans, dailyServiceRequests),
+      consults: buildConsults(dailyServiceRequests, dailyCarePlans),
       tMax: Number(dayVital.bt),
       vital: dayVital
     };
@@ -231,7 +247,7 @@ function buildDailyData(input) {
   return dayMap;
 }
 
-function summarizeObservations(observations) {
+function summarizeObservations(observations, dateMap = {}) {
   const latestVital = {};
   const vitalsByDate = {};
   const labsByDate = {};
@@ -239,7 +255,7 @@ function summarizeObservations(observations) {
   const ioByDate = {};
 
   observations.forEach((observation) => {
-    const date = observationDate(observation) || todayIso();
+    const date = remapTimelineDate(observationDate(observation), dateMap) || todayIso();
     const time = observationTime(observation) || "08:00";
     const label = observationLabel(observation);
     const value = observationValue(observation);
@@ -450,15 +466,11 @@ function buildConsults(serviceRequests, carePlans) {
   ]).join(", ") || "-";
 }
 
-function buildSpecialsForDate(date, reportList, procedureList, documents) {
-  const docList = documents
-    .filter((item) => documentDate(item) === date)
-    .map((item) => documentTitle(item));
-
+function buildSpecialsForDate(reports, procedures, documents) {
   return unique([
-    ...reportList.slice(0, 3),
-    ...procedureList.slice(0, 3),
-    ...docList.slice(0, 2)
+    ...(reports || []).map((item) => reportLabel(item)).slice(0, 3),
+    ...(procedures || []).map((item) => procedureLabel(item)).slice(0, 3),
+    ...(documents || []).map((item) => documentTitle(item)).slice(0, 2)
   ]).slice(0, 8);
 }
 
@@ -552,6 +564,138 @@ function buildTimelineDates(data, latestEncounter) {
     dates.push(normalizeDate(date));
   }
   return dates;
+}
+
+function buildSourceDateMap(data, timelineDates) {
+  const sourceDates = unique([
+    ...data.encounters.map(encounterDate),
+    ...data.conditions.map(conditionDate),
+    ...data.observations.map(observationDate),
+    ...data.medications.map(medicationDate),
+    ...data.administrations.map(administrationDate),
+    ...data.procedures.map(procedureDate),
+    ...data.reports.map(reportDate),
+    ...data.serviceRequests.map(serviceRequestDate),
+    ...data.carePlans.map(carePlanDate),
+    ...data.documents.map(documentDate)
+  ].filter(Boolean)).sort().slice(-timelineDates.length);
+
+  const startIndex = Math.max(0, timelineDates.length - sourceDates.length);
+  return Object.fromEntries(sourceDates.map((date, index) => [date, timelineDates[startIndex + index]]));
+}
+
+function remapTimelineDate(date, dateMap) {
+  if (!date) return "";
+  return dateMap && dateMap[date] ? dateMap[date] : date;
+}
+
+function toSeoulDate(date) {
+  return new Date(`${date}T00:00:00+09:00`);
+}
+
+function dayDiff(laterDate, earlierDate) {
+  if (!laterDate || !earlierDate) return Number.POSITIVE_INFINITY;
+  return Math.round((toSeoulDate(laterDate).getTime() - toSeoulDate(earlierDate).getTime()) / 86400000);
+}
+
+function filterResourcesForDate(items, dateFn, targetDate, dateMap, options = {}) {
+  const { mode = "exact", daysBack = 0, limit = 20 } = options;
+
+  return sortDesc(
+    (items || []).filter((item) => {
+      const mappedDate = remapTimelineDate(dateFn(item), dateMap);
+      if (!mappedDate) return false;
+      if (mode === "exact") return mappedDate === targetDate;
+      if (mappedDate > targetDate) return false;
+      return dayDiff(targetDate, mappedDate) <= daysBack;
+    }),
+    (item) => remapTimelineDate(dateFn(item), dateMap)
+  ).slice(0, limit);
+}
+
+function filterMedicationSetForDate(medications, administrations, date, dateMap) {
+  const dailyAdministrations = filterResourcesForDate(
+    administrations,
+    administrationDate,
+    date,
+    dateMap,
+    { mode: "exact", limit: 20 }
+  );
+  const exactMedications = filterResourcesForDate(
+    medications,
+    medicationDate,
+    date,
+    dateMap,
+    { mode: "exact", limit: 20 }
+  );
+  const recentMedications = filterResourcesForDate(
+    medications,
+    medicationDate,
+    date,
+    dateMap,
+    { mode: "recent", daysBack: 3, limit: 20 }
+  );
+  const dailyAdministrationNames = new Set(
+    dailyAdministrations.map((item) => medicationAdministrationLabel(item)).filter(Boolean)
+  );
+  const merged = [];
+
+  [...exactMedications, ...recentMedications].forEach((item) => {
+    const label = medicationLabel(item);
+    if (!label) return;
+    if (!merged.some((saved) => medicationLabel(saved) === label)) merged.push(item);
+  });
+
+  dailyAdministrationNames.forEach((label) => {
+    const matchedMedication = (medications || []).find((item) => medicationLabel(item) === label);
+    if (matchedMedication && !merged.some((saved) => medicationLabel(saved) === label)) {
+      merged.push(matchedMedication);
+    }
+  });
+
+  return {
+    medications: merged.slice(0, 12),
+    administrations: dailyAdministrations
+  };
+}
+
+function buildDailyOrderEventsByDate(dates, medications, serviceRequests, carePlans, dateMap) {
+  const byDate = {};
+
+  dates.forEach((date, index) => {
+    const items = [];
+
+    filterResourcesForDate(medications, medicationDate, date, dateMap, { mode: "exact", limit: 3 }).forEach((item, medIndex) => {
+      items.push({
+        time: medIndex === 0 ? "08:30" : medIndex === 1 ? "12:30" : "17:30",
+        nurse: fallbackNurseName(index + medIndex),
+        note: `신규 처방 확인함: ${medicationLabel(item)}`,
+        event: ""
+      });
+    });
+
+    filterResourcesForDate(serviceRequests, serviceRequestDate, date, dateMap, { mode: "exact", limit: 2 }).forEach((item, requestIndex) => {
+      items.push({
+        time: requestIndex === 0 ? "09:30" : "15:00",
+        nurse: fallbackNurseName(index + 2 + requestIndex),
+        note: `검사 및 처치 오더 확인함: ${serviceRequestLabel(item)}`,
+        event: ""
+      });
+    });
+
+    filterResourcesForDate(carePlans, carePlanDate, date, dateMap, { mode: "exact", limit: 2 }).forEach((item, careIndex) => {
+      items.push({
+        time: careIndex === 0 ? "13:30" : "19:00",
+        nurse: fallbackNurseName(index + 4 + careIndex),
+        note: `간호계획 변경사항 확인함: ${carePlanTitle(item)}`,
+        event: ""
+      });
+    });
+
+    byDate[date] = items;
+  });
+
+  return byDate;
 }
 
 function propagateLabs(dayMap, dates) {
@@ -801,6 +945,16 @@ function medicationDate(item) {
   return normalizeDate(item && (item.authoredOn || (item.meta && item.meta.lastUpdated)));
 }
 
+function administrationDate(item) {
+  return normalizeDate(
+    item && (
+      item.effectiveDateTime ||
+      (item.effectivePeriod && item.effectivePeriod.start) ||
+      (item.meta && item.meta.lastUpdated)
+    )
+  );
+}
+
 function procedureDate(item) {
   return normalizeDate(item && (item.performedDateTime || (item.performedPeriod && item.performedPeriod.start) || (item.meta && item.meta.lastUpdated)));
 }
@@ -956,48 +1110,81 @@ function todayIso() {
 }
 
 function buildDailyData(input) {
-  const administrationEvents = buildAdministrationEventsByDate(input.administrations || []);
-  const reportEvents = buildReportEventsByDate(input.documents || [], input.reportList || []);
-  const nursingTaskEvents = buildNursingTaskEventsByDate(input.dates, input.lineTube, input.carePlans, input.serviceRequests);
+  const administrationEvents = buildAdministrationEventsByDate(input.administrations || [], input.dateMap || {});
+  const reportEvents = buildReportEventsByDate(input.documents || [], input.reports || [], input.dateMap || {});
+  const nursingTaskEvents = buildNursingTaskEventsByDate(
+    input.dates,
+    input.lineTube,
+    input.carePlans,
+    input.serviceRequests,
+    input.dateMap || {}
+  );
+  const orderEvents = buildDailyOrderEventsByDate(
+    input.dates,
+    input.medications || [],
+    input.serviceRequests || [],
+    input.carePlans || [],
+    input.dateMap || {}
+  );
   const dayMap = {};
 
   input.dates.forEach((date, index) => {
     const fallbackVital = input.observationSummary.latestVital || defaultVital();
     const dayVital = input.observationSummary.vitalsByDate[date] || varyVital(fallbackVital, index - (input.dates.length - 1));
+    const dailyConditions = filterResourcesForDate(input.conditions || [], conditionDate, date, input.dateMap || {}, { mode: "recent", daysBack: 4, limit: 6 });
+    const dailyServiceRequests = filterResourcesForDate(input.serviceRequests || [], serviceRequestDate, date, input.dateMap || {}, { mode: "recent", daysBack: 3, limit: 6 });
+    const dailyCarePlans = filterResourcesForDate(input.carePlans || [], carePlanDate, date, input.dateMap || {}, { mode: "recent", daysBack: 3, limit: 4 });
+    const dailyReports = filterResourcesForDate(input.reports || [], reportDate, date, input.dateMap || {}, { mode: "recent", daysBack: 2, limit: 4 });
+    const dailyProcedures = filterResourcesForDate(input.procedures || [], procedureDate, date, input.dateMap || {}, { mode: "recent", daysBack: 2, limit: 4 });
+    const dailyDocuments = filterResourcesForDate(input.documents || [], documentDate, date, input.dateMap || {}, { mode: "recent", daysBack: 2, limit: 4 });
+    const dailyMedicationSet = filterMedicationSetForDate(input.medications || [], input.administrations || [], date, input.dateMap || {});
+    const dailyMedicationOrders = buildMedicationOrders(dailyMedicationSet.medications, dailyMedicationSet.administrations);
+    const dailyDiagnosisList = unique(dailyConditions.map(conditionLabel)).slice(0, 6);
     const eventNotes = [
       ...(input.observationSummary.eventsByDate[date] || []),
       ...(administrationEvents[date] || []),
       ...(reportEvents[date] || []),
-      ...(nursingTaskEvents[date] || [])
-    ];
+      ...(nursingTaskEvents[date] || []),
+      ...(orderEvents[date] || [])
+    ].sort((a, b) => String(a.time || "").localeCompare(String(b.time || "")));
 
     dayMap[date] = {
       pastHistory: input.pastHistory.slice(0, 8),
-      nursingProblem: buildNursingProblemText(input.diagnosisList, input.serviceRequests, input.carePlans),
+      nursingProblem: buildNursingProblemText(
+        dailyDiagnosisList.length ? dailyDiagnosisList : input.diagnosisList,
+        dailyServiceRequests,
+        dailyCarePlans
+      ),
       handover: {
         lines: input.lineTube.lines,
         tubes: input.lineTube.tubes,
         drains: input.lineTube.drains,
-        drugs: input.medicationOrders.running,
+        drugs: dailyMedicationOrders.running,
         vent: input.lineTube.vent,
-        neuro: buildNeuroItems(input.diagnosisList, input.carePlans),
+        neuro: buildNeuroItems(dailyDiagnosisList.length ? dailyDiagnosisList : input.diagnosisList, dailyCarePlans),
         etc: input.allergyList.slice(0, 2).map((text) => ({ text, detail: "알레르기 / 주의" }))
       },
       hourly: buildHourlyTimeline(date, dayVital, eventNotes),
       io: input.observationSummary.ioByDate[date] || { input: "-", totalOutput: "-" },
-      activity: findActivity(input.carePlans, input.latestEncounter),
+      activity: findActivity(dailyCarePlans.length ? dailyCarePlans : input.carePlans, input.latestEncounter),
       orders: {
-        inj: input.medicationOrders.inj,
-        po: input.medicationOrders.po
+        inj: dailyMedicationOrders.inj,
+        po: dailyMedicationOrders.po
       },
       labs: input.observationSummary.labsByDate[date] || input.observationSummary.latestLabs || {},
-      specials: buildSpecialsForDate(date, input.reportList, input.procedureList, input.documents),
-      docOrders: buildDoctorOrders(input.medicationOrders, input.serviceRequests, input.carePlans),
-      medSchedule: buildMedicationSchedule(input.medicationOrders),
-      todoList: buildTodoList(input.diagnosisList, input.serviceRequests, input.carePlans, date, input.dates[input.dates.length - 1]),
-      nursingTasks: buildNursingTasks(input.lineTube, input.carePlans, input.documents),
-      plan: buildPlanItems(input.diagnosisList, input.carePlans, input.serviceRequests),
-      consults: buildConsults(input.serviceRequests, input.carePlans),
+      specials: buildSpecialsForDate(dailyReports, dailyProcedures, dailyDocuments),
+      docOrders: buildDoctorOrders(dailyMedicationOrders, dailyServiceRequests, dailyCarePlans),
+      medSchedule: buildMedicationSchedule(dailyMedicationOrders),
+      todoList: buildTodoList(
+        dailyDiagnosisList.length ? dailyDiagnosisList : input.diagnosisList,
+        dailyServiceRequests,
+        dailyCarePlans,
+        date,
+        input.dates[input.dates.length - 1]
+      ),
+      nursingTasks: buildNursingTasks(input.lineTube, dailyCarePlans, dailyDocuments),
+      plan: buildPlanItems(dailyDiagnosisList.length ? dailyDiagnosisList : input.diagnosisList, dailyCarePlans, dailyServiceRequests),
+      consults: buildConsults(dailyServiceRequests, dailyCarePlans),
       tMax: Number(dayVital.bt),
       vital: dayVital
     };
@@ -1031,15 +1218,11 @@ function buildHourlyTimeline(date, dayVital, events) {
   return hourly;
 }
 
-function buildAdministrationEventsByDate(administrations) {
+function buildAdministrationEventsByDate(administrations, dateMap = {}) {
   const byDate = {};
 
   administrations.forEach((item, index) => {
-    const date = normalizeDate(
-      item.effectiveDateTime ||
-      (item.effectivePeriod && item.effectivePeriod.start) ||
-      (item.meta && item.meta.lastUpdated)
-    );
+    const date = remapTimelineDate(administrationDate(item), dateMap);
     if (!date) return;
 
     const time = normalizeTime(
@@ -1143,6 +1326,120 @@ function buildNursingTaskEventsByDate(dates, lineTube, carePlans, serviceRequest
         time: requestIndex === 0 ? "11:00" : "16:00",
         nurse: fallbackNurseName(index + 4 + requestIndex),
         note: `검사/처치 준비 및 시행 여부 확인함: ${serviceRequestLabel(item)}`,
+        event: ""
+      });
+    });
+
+    byDate[date] = items;
+  });
+
+  return byDate;
+}
+
+function buildAdministrationEventsByDate(administrations, dateMap = {}) {
+  const byDate = {};
+
+  administrations.forEach((item, index) => {
+    const date = remapTimelineDate(administrationDate(item), dateMap);
+    if (!date) return;
+
+    const time = normalizeTime(
+      item.effectiveDateTime ||
+      (item.effectivePeriod && item.effectivePeriod.start) ||
+      (item.meta && item.meta.lastUpdated)
+    ) || `${String((8 + index) % 24).padStart(2, "0")}:00`;
+
+    const nurse = administrationPerformer(item) || fallbackNurseName(index);
+    const med = medicationAdministrationLabel(item) || "투약";
+    const status = item.status ? `상태 ${item.status}` : "투약 수행";
+
+    if (!byDate[date]) byDate[date] = [];
+    byDate[date].push({
+      time,
+      nurse,
+      note: `${med} ${status}`,
+      event: /stop|hold|error/i.test(status) ? med : ""
+    });
+  });
+
+  return byDate;
+}
+
+function fallbackNurseName(index) {
+  const names = ["김간호", "이간호", "박간호", "최간호", "정간호", "조간호"];
+  return `${names[index % names.length]} RN`;
+}
+
+function buildReportEventsByDate(documents, reports, dateMap = {}) {
+  const byDate = {};
+
+  documents.slice(0, 20).forEach((item, index) => {
+    const date = remapTimelineDate(documentDate(item), dateMap);
+    if (!date) return;
+    if (!byDate[date]) byDate[date] = [];
+    byDate[date].push({
+      time: `${String((10 + index) % 24).padStart(2, "0")}:20`,
+      nurse: fallbackNurseName(index + 2),
+      note: `문서 확인함: ${documentTitle(item)}`,
+      event: ""
+    });
+  });
+
+  reports.slice(0, 20).forEach((item, index) => {
+    const date = remapTimelineDate(reportDate(item), dateMap);
+    if (!date) return;
+    if (!byDate[date]) byDate[date] = [];
+    byDate[date].push({
+      time: `${String((11 + index) % 24).padStart(2, "0")}:40`,
+      nurse: fallbackNurseName(index + 3),
+      note: `판독 결과 확인함: ${reportLabel(item)}`,
+      event: ""
+    });
+  });
+
+  return byDate;
+}
+
+function buildNursingTaskEventsByDate(dates, lineTube, carePlans, serviceRequests, dateMap = {}) {
+  const byDate = {};
+
+  dates.forEach((date, index) => {
+    const items = [];
+    const dailyCarePlans = filterResourcesForDate(carePlans || [], carePlanDate, date, dateMap, { mode: "recent", daysBack: 2, limit: 2 });
+    const dailyServiceRequests = filterResourcesForDate(serviceRequests || [], serviceRequestDate, date, dateMap, { mode: "recent", daysBack: 2, limit: 2 });
+
+    lineTube.lines.slice(0, 2).forEach((item) => {
+      items.push({
+        time: "07:30",
+        nurse: fallbackNurseName(index),
+        note: `${item.text} 라인 부위 사정 및 고정 상태 확인함`,
+        event: ""
+      });
+    });
+
+    lineTube.tubes.slice(0, 2).forEach((item) => {
+      items.push({
+        time: "10:30",
+        nurse: fallbackNurseName(index + 1),
+        note: `${item.text} 유지 상태 확인 및 배액 여부 관찰함`,
+        event: ""
+      });
+    });
+
+    dailyCarePlans.forEach((item, careIndex) => {
+      items.push({
+        time: careIndex === 0 ? "14:00" : "18:00",
+        nurse: fallbackNurseName(index + 2 + careIndex),
+        note: `간호계획 수행함: ${carePlanTitle(item)}`,
+        event: ""
+      });
+    });
+
+    dailyServiceRequests.forEach((item, requestIndex) => {
+      items.push({
+        time: requestIndex === 0 ? "11:00" : "16:00",
+        nurse: fallbackNurseName(index + 4 + requestIndex),
+        note: `검사 및 처치 준비, 시행 여부 확인함: ${serviceRequestLabel(item)}`,
         event: ""
       });
     });
