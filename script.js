@@ -4,10 +4,93 @@ let aiPanelOpen = false;
 let checklistState = {};
 let currentDateIndex = 9;
 let dateList = [];
+const localPatients = typeof patients !== 'undefined' ? patients : [];
+let patientStore = [];
+let usingExternalData = false;
+const patientDetailCache = new Map();
+let uiInitialized = false;
+
+document.addEventListener('DOMContentLoaded', function () {
+  initializeApp();
+});
+
+async function initializeApp() {
+  await loadPatientStore();
+  if (!patientStore.length) return;
+
+  let firstPatient = patientStore[0];
+  try {
+    firstPatient = await getPatientData(patientStore[0].id);
+  } catch (error) {
+    console.warn('Initial patient detail load failed.', error);
+  }
+
+  syncDateList(firstPatient);
+  currentDateIndex = Math.max(0, dateList.length - 1);
+
+  renderPatientList();
+  setupUI();
+  setupAIRangeSelectors();
+  updateDataSourceLabel();
+  updateDateDisplay();
+  selectPatient(patientStore[0].id);
+}
+
+async function loadPatientStore() {
+  try {
+    const response = await fetch('/api/patients');
+    if (!response.ok) throw new Error(`External patient list failed: ${response.status}`);
+
+    const payload = await response.json();
+    if (!payload.patients || !payload.patients.length) throw new Error('No external patients returned');
+
+    patientStore = payload.patients;
+    usingExternalData = true;
+  } catch (error) {
+    console.warn('Falling back to local patient data.', error);
+    patientStore = localPatients;
+    usingExternalData = false;
+
+    localPatients.forEach(p => {
+      patientDetailCache.set(String(p.id), p);
+    });
+  }
+}
+
+function updateDataSourceLabel() {
+  const header = document.querySelector('.list-header');
+  if (!header) return;
+  header.textContent = usingExternalData ? '환자목록 · 외부 FHIR' : '환자목록 · 데모';
+}
+
+function syncDateList(patient) {
+  if (!patient || !patient.dailyData) return;
+  dateList = Object.keys(patient.dailyData).sort();
+  currentDateIndex = Math.min(currentDateIndex, Math.max(0, dateList.length - 1));
+}
+
+async function getPatientData(pid) {
+  const cacheKey = String(pid);
+  if (patientDetailCache.has(cacheKey)) return patientDetailCache.get(cacheKey);
+
+  if (!usingExternalData) {
+    return patientStore.find(pt => String(pt.id) === cacheKey) || null;
+  }
+
+  const response = await fetch(`/api/patients?id=${encodeURIComponent(pid)}`);
+  if (!response.ok) {
+    throw new Error(`External patient detail failed: ${response.status}`);
+  }
+
+  const detail = await response.json();
+  patientDetailCache.set(cacheKey, detail);
+  patientStore = patientStore.map(pt => String(pt.id) === cacheKey ? { ...pt, ...detail } : pt);
+  return detail;
+}
 
 // 초기화
 document.addEventListener('DOMContentLoaded', function () {
-  if (typeof patients !== 'undefined' && patients.length > 0) {
+  if (false && typeof patients !== 'undefined' && patients.length > 0) {
     if (patients[0].dailyData) {
       dateList = Object.keys(patients[0].dailyData).sort();
     }
@@ -19,6 +102,8 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 function setupUI() {
+  if (uiInitialized) return;
+  uiInitialized = true;
   // 날짜 네비게이션
   const prevBtn = document.getElementById('prevDateBtn');
   const nextBtn = document.getElementById('nextDateBtn');
@@ -129,9 +214,18 @@ function updateDateDisplay() {
 }
 
 // ===== 🖥️ 메인 대시보드 업데이트 =====
-function updateDashboard(pid) {
-  const p = patients.find(pt => pt.id === pid);
+async function updateDashboard(pid) {
+  let p = null;
+
+  try {
+    p = await getPatientData(pid);
+  } catch (error) {
+    console.error(error);
+    return;
+  }
+
   if (!p) return;
+  syncDateList(p);
   const dateKey = dateList[currentDateIndex];
   const data = p.dailyData ? p.dailyData[dateKey] : null;
   if (!data) return;
@@ -226,9 +320,9 @@ function runAIRangeAnalysis(pid) {
   const summaryTab = document.getElementById('tab-summary');
   summaryTab.innerHTML = '<div class="ai-placeholder" style="padding:20px;">⏳ 분석 중...</div>';
 
-  setTimeout(() => {
+  setTimeout(async () => {
     try {
-      const p = patients.find(pt => pt.id === pid);
+      const p = await getPatientData(pid);
       const startIdx = parseInt(document.getElementById('aiRangeStart').value);
       const endIdx = parseInt(document.getElementById('aiRangeEnd').value);
 
@@ -548,8 +642,8 @@ function analyzeClinicalCourse(p, dates) {
 }
 
 // 🩸 [수정완료] Lab 모달 열기 (전역 함수로 등록)
-window.openLabModal = function (pid, category) {
-  const p = patients.find(pt => pt.id == pid);
+window.openLabModal = async function (pid, category) {
+  const p = await getPatientData(pid);
   if (!p) return alert("환자 정보를 찾을 수 없습니다.");
 
   const modalBody = document.getElementById('labModalBody');
@@ -896,18 +990,19 @@ function renderMedList(arr) {
 }
 
 function renderSimpleList(arr) { return (arr || []).map(i => typeof i === 'string' ? `• ${i}` : `• ${i.text} (${i.detail || ''})`).join('<br>'); }
-function selectPatient(pid) {
+async function selectPatient(pid) {
   selectedPatientId = pid;
   document.querySelectorAll('.pt-row').forEach(row => {
-    row.classList.toggle('selected', parseInt(row.dataset.id) === pid);
+    row.classList.toggle('selected', row.dataset.id === String(pid));
   });
-  updateDashboard(pid);
+  await updateDashboard(pid);
+  setupAIRangeSelectors();
   if (aiPanelOpen) runAIRangeAnalysis(pid);
 }
 function renderPatientList() {
   const list = document.getElementById('patientList');
-  list.innerHTML = patients.map(p => `<div class="pt-row" data-id="${p.id}" onclick="selectPatient(${p.id})"><span class="room">${p.room}</span><span class="name">${p.name}</span></div>`).join('');
-  document.getElementById('patientCount').textContent = patients.length;
+  list.innerHTML = patientStore.map(p => `<div class="pt-row" data-id="${p.id}" onclick="selectPatient('${p.id}')"><span class="room">${p.room || '-'}</span><span class="name">${p.name}</span></div>`).join('');
+  document.getElementById('patientCount').textContent = patientStore.length;
 }
 function openAIPanel() { if (!selectedPatientId) return alert("환자선택필요"); document.getElementById('aiPanel').classList.add('active'); document.getElementById('overlay').classList.add('active'); aiPanelOpen = true; runAIRangeAnalysis(selectedPatientId); }
 function closeAIPanel() { document.getElementById('aiPanel').classList.remove('active'); document.getElementById('overlay').classList.remove('active'); aiPanelOpen = false; }
