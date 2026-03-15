@@ -9,6 +9,7 @@ let patientStore = [];
 let usingExternalData = false;
 const patientDetailCache = new Map();
 let uiInitialized = false;
+const KOREA_TIMEZONE = 'Asia/Seoul';
 
 document.addEventListener('DOMContentLoaded', function () {
   initializeApp();
@@ -86,6 +87,29 @@ async function getPatientData(pid) {
   patientDetailCache.set(cacheKey, detail);
   patientStore = patientStore.map(pt => String(pt.id) === cacheKey ? { ...pt, ...detail } : pt);
   return detail;
+}
+
+function getKoreanNowParts() {
+  const formatter = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: KOREA_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  });
+
+  const parts = Object.fromEntries(
+    formatter.formatToParts(new Date())
+      .filter(part => part.type !== 'literal')
+      .map(part => [part.type, part.value])
+  );
+
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${parts.hour}:${parts.minute}`
+  };
 }
 
 // 초기화
@@ -202,7 +226,7 @@ function updateDateDisplay() {
   if (displayEl) displayEl.textContent = dateStr;
   if (dDayEl) {
     const diff = currentDateIndex - (dateList.length - 1);
-    dDayEl.textContent = diff === 0 ? "Today" : `D${diff}`; // 12-02 기준 D-Day
+    dDayEl.textContent = diff === 0 ? "오늘" : `D${diff}`;
   }
 
   // 동기화
@@ -240,7 +264,7 @@ async function updateDashboard(pid) {
   // setHTML('ptRegNum', p.regNum); // Redundant, pRegNo is already set above
 
   // Render Past History in Column 1
-  const historyStr = (data.pastHistory || []).join(', ');
+  const historyStr = (data.pastHistory || []).map(item => `<div>• ${item}</div>`).join('');
   setHTML('pastHistoryList', historyStr || '-');
 
   setText('pAdmit', p.admitDate);
@@ -248,11 +272,11 @@ async function updateDashboard(pid) {
   setText('pIso', p.isolation);
   setText('pHD', `HD #${getHD(p.admitDate, dateKey)}`);
 
-  setHTML('admitReason', `<div style="max-height:80px; overflow-y:auto; font-size:11px;">${p.admissionNote || p.admitReason}</div>`);
-  setHTML('nursingProblem', data.nursingProblem);
+  setHTML('admitReason', `<div style="max-height:110px; overflow-y:auto; font-size:13px; line-height:1.55;">${formatMultilineText(p.admissionNote || p.admitReason)}</div>`);
+  setHTML('nursingProblem', formatMultilineText(data.nursingProblem));
 
   const h = data.handover || {};
-  const combinedLines = [...(h.lines || []), ...(h.tubes || []), ...(h.drains || [])];
+  const combinedLines = [...(h.lines || []), ...(h.tubes || []), ...(h.drains || []), ...(h.vent || [])];
   setHTML('lineTube', renderSimpleList(combinedLines));
 
   const hourly = data.hourly || [];
@@ -265,8 +289,8 @@ async function updateDashboard(pid) {
   setHTML('vitalSign', vsFlow || '데이터 없음');
 
   setHTML('ioActivity', `
-    <div><b>Total I/O:</b> ${data.io?.input || 0} / ${data.io?.totalOutput || 0}</div>
-    <div style="margin-top:4px;"><b>Activity:</b> ${data.activity}</div>
+    <div><b>총 I/O:</b> ${data.io?.input || '-'} / ${data.io?.totalOutput || '-'}</div>
+    <div style="margin-top:4px;"><b>활동:</b> ${data.activity || '-'}</div>
   `);
 
   const inj = data.orders?.inj || [];
@@ -288,8 +312,8 @@ async function updateDashboard(pid) {
        </div>`
     ).join('');
   }
-  setHTML('labResult', labHtml || '-');
-  setHTML('labSpecial', (data.specials || []).join(', ') || '-');
+  setHTML('labResult', renderLabSummary(p.id, labs));
+  setHTML('labSpecial', (data.specials || []).map(item => `• ${item}`).join('<br>') || '-');
 
   const notesHtml = hourly.flatMap(h => (h.notes || []).map(n => `
     <div style="border-bottom:1px solid #eee; padding:4px 0; font-size:11px;">
@@ -303,12 +327,12 @@ async function updateDashboard(pid) {
   const doc = data.docOrders || { routine: [], prn: [] };
   let docHtml = '';
   if (doc.routine.length) {
-    docHtml += `<div style="margin-bottom:6px;"><div style="color:#2e7d32; font-weight:bold; margin-bottom:2px;">[Routine]</div>${doc.routine.map(r => `<div>• ${r}</div>`).join('')}</div>`;
+    docHtml += `<div style="margin-bottom:6px;"><div style="color:#2e7d32; font-weight:bold; margin-bottom:2px;">[정규 처방]</div>${doc.routine.map(r => `<div>• ${r}</div>`).join('')}</div>`;
   }
   if (doc.prn.length) {
     docHtml += `<div><div style="color:#d81b60; font-weight:bold; margin-bottom:2px;">[PRN / Notify]</div>${doc.prn.map(r => `<div>• ${r}</div>`).join('')}</div>`;
   }
-  setHTML('docOrderList', docHtml || '특이 Order 없음');
+  setHTML('docOrderList', docHtml || '특이 처방 없음');
 
   // Update AI Panel
   const aiPtDiv = document.getElementById('aiPanelPatient');
@@ -642,6 +666,65 @@ function analyzeClinicalCourse(p, dates) {
 }
 
 // 🩸 [수정완료] Lab 모달 열기 (전역 함수로 등록)
+function formatMultilineText(value) {
+  if (!value) return '-';
+  return String(value)
+    .split(/\n+/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => `<div>${line}</div>`)
+    .join('') || '-';
+}
+
+function formatLabValue(value) {
+  if (value === null || typeof value === 'undefined' || value === '') return '-';
+  const text = String(value);
+  if (/^-?\d+(\.\d+)?$/.test(text)) return Number(text).toFixed(2);
+  return text.replace(/(-?\d+\.\d{2})\d+/g, '$1');
+}
+
+function sortLabCategories(categories) {
+  const order = ['CBC', '화학검사', '전해질', '간기능', '신장기능', '염증검사', '혈액가스', '응고검사', '요검사', '기타'];
+  return [...categories].sort((a, b) => {
+    const aIndex = order.indexOf(a);
+    const bIndex = order.indexOf(b);
+    return (aIndex === -1 ? order.length : aIndex) - (bIndex === -1 ? order.length : bIndex);
+  });
+}
+
+function renderLabSummary(pid, labs) {
+  const categories = sortLabCategories(Object.keys(labs || {}));
+  if (!categories.length) return '-';
+
+  return categories.map(category => {
+    const entries = Object.entries(labs[category] || {}).slice(0, 6);
+    if (!entries.length) return '';
+
+    const rows = entries.map(([key, rawValue]) => {
+      const value = formatLabValue(rawValue);
+      const status = getLabStatus(key, value).status;
+      const color = status === 'high' ? '#c62828' : status === 'low' ? '#1565c0' : '#333';
+      return `<tr>
+        <td style="border:1px solid #dcdcdc; padding:4px 6px; font-weight:bold;">${key}</td>
+        <td style="border:1px solid #dcdcdc; padding:4px 6px; color:${color}; font-weight:${status === 'normal' ? 'normal' : 'bold'};">${value}</td>
+      </tr>`;
+    }).join('');
+
+    return `<div style="margin-bottom:8px;">
+      <div class="lab-link-item" onclick="openLabModal('${pid}', '${category}')" style="cursor:pointer; color:#1976d2; margin-bottom:4px; font-weight:bold;">${category}</div>
+      <table style="width:100%; border-collapse:collapse; font-size:12px; background:#fff;">
+        <thead>
+          <tr style="background:#f3f6fb;">
+            <th style="border:1px solid #dcdcdc; padding:4px 6px; text-align:left;">검사항목</th>
+            <th style="border:1px solid #dcdcdc; padding:4px 6px; text-align:left;">수치</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  }).join('');
+}
+
 window.openLabModal = async function (pid, category) {
   const p = await getPatientData(pid);
   if (!p) return alert("환자 정보를 찾을 수 없습니다.");
@@ -696,7 +779,7 @@ window.openLabModal = async function (pid, category) {
     allDates.forEach(d => {
       // Nested Lookup
       const categoryObj = p.dailyData[d].labs ? p.dailyData[d].labs[targetCategory] : null;
-      const val = categoryObj ? (categoryObj[key] || '-') : '-';
+      const val = formatLabValue(categoryObj ? (categoryObj[key] || '-') : '-');
 
       const st = getLabStatus(key, val);
       let cellStyle = '';

@@ -195,7 +195,7 @@ function buildDailyData(input) {
     const dayVital = input.observationSummary.vitalsByDate[date] || varyVital(fallbackVital, index - (input.dates.length - 1));
     dayMap[date] = {
       pastHistory: input.pastHistory.slice(0, 8),
-      nursingProblem: input.diagnosisList.slice(0, 5).join(", ") || "FHIR 간호문제 정보 없음",
+      nursingProblem: buildNursingProblemText(input.diagnosisList, input.serviceRequests, input.carePlans),
       handover: {
         lines: input.lineTube.lines,
         tubes: input.lineTube.tubes,
@@ -252,9 +252,9 @@ function summarizeObservations(observations) {
 
     if (isLabObservation(observation)) {
       if (!labsByDate[date]) labsByDate[date] = {};
-      const category = observationCategory(observation) || "검사";
+      const category = mapLabCategory(label);
       if (!labsByDate[date][category]) labsByDate[date][category] = {};
-      labsByDate[date][category][label] = value;
+      labsByDate[date][category][normalizeLabLabel(label)] = formatNumericValue(value);
     }
 
     if (/input/i.test(label)) {
@@ -328,9 +328,9 @@ function buildLineTubeSummary(devices, procedures, serviceRequests, observations
     else if (/line|iv|picc|central|port|cvc|arterial/i.test(text)) buckets.lines.push(item);
   };
 
-  devices.forEach((device) => add(deviceLabel(device), device.status || ""));
-  procedures.forEach((procedure) => add(procedureLabel(procedure), procedure.status || ""));
-  serviceRequests.forEach((request) => add(serviceRequestLabel(request), request.status || ""));
+  devices.filter((device) => isCurrentStatus(device.status)).forEach((device) => add(deviceLabel(device), device.status || ""));
+  procedures.filter((procedure) => isCurrentStatus(procedure.status)).forEach((procedure) => add(procedureLabel(procedure), procedure.status || ""));
+  serviceRequests.filter((request) => isCurrentStatus(request.status)).forEach((request) => add(serviceRequestLabel(request), request.status || ""));
   observations.forEach((observation) => {
     const label = observationLabel(observation);
     if (/line|tube|drain|catheter|vent|oxygen/i.test(label)) add(label, observationValue(observation));
@@ -472,15 +472,15 @@ function buildAdmissionNote(encounter, diagnosisList, allergyList, procedureList
     encounter && encounter.period && encounter.period.start ? encounter.period.start.slice(0, 10) : ""
   ].filter(Boolean).join(" / ");
 
-  if (encounterInfo) parts.push(`입원정보: ${encounterInfo}`);
-  if (diagnosisList.length) parts.push(`진단: ${diagnosisList.slice(0, 4).join(", ")}`);
-  if (allergyList.length) parts.push(`알레르기: ${allergyList.slice(0, 2).join(", ")}`);
-  if (procedureList.length) parts.push(`시술/수술: ${procedureList.slice(0, 3).join(", ")}`);
-  if (reportList.length) parts.push(`검사/판독: ${reportList.slice(0, 2).join(", ")}`);
-  if (serviceRequests.length) parts.push(`요청사항: ${serviceRequests.slice(0, 3).map((item) => serviceRequestLabel(item)).join(", ")}`);
-  if (documents.length) parts.push(`문서: ${documents.slice(0, 2).map((item) => documentTitle(item)).join(", ")}`);
+  if (encounterInfo) parts.push(`<b>입원정보</b>: ${encounterInfo}`);
+  if (diagnosisList.length) parts.push(`<b>진단</b>: ${diagnosisList.slice(0, 4).join(", ")}`);
+  if (allergyList.length) parts.push(`<b>알레르기</b>: ${allergyList.slice(0, 2).join(", ")}`);
+  if (procedureList.length) parts.push(`<b>시술/수술</b>: ${procedureList.slice(0, 3).join(", ")}`);
+  if (reportList.length) parts.push(`<b>검사/판독</b>: ${reportList.slice(0, 2).join(", ")}`);
+  if (serviceRequests.length) parts.push(`<b>요청사항</b>: ${serviceRequests.slice(0, 3).map((item) => serviceRequestLabel(item)).join(", ")}`);
+  if (documents.length) parts.push(`<b>문서</b>: ${documents.slice(0, 2).map((item) => documentTitle(item)).join(", ")}`);
 
-  return parts.join(" | ") || "외부 FHIR 기록에서 가져온 입원 정보";
+  return parts.join("\n") || "외부 FHIR 기록에서 가져온 입원 정보";
 }
 
 function findActivity(carePlans, encounter) {
@@ -743,7 +743,7 @@ function observationValue(observation) {
     const diastolic = observation.component.find((item) => matchesAnyCode(codingCodes(item.code), VITAL_CODES.diastolic));
     return `${quantityValue(systolic && systolic.valueQuantity) || "-"} / ${quantityValue(diastolic && diastolic.valueQuantity) || "-"}`;
   }
-  if (observation.valueQuantity) return quantityValue(observation.valueQuantity);
+  if (observation.valueQuantity) return formatNumericValue(quantityValue(observation.valueQuantity));
   if (observation.valueString) return observation.valueString;
   if (observation.valueCodeableConcept) return codeableText(observation.valueCodeableConcept);
   if (typeof observation.valueBoolean === "boolean") return observation.valueBoolean ? "예" : "아니오";
@@ -752,7 +752,9 @@ function observationValue(observation) {
 
 function quantityValue(quantity) {
   if (!quantity || typeof quantity.value === "undefined" || quantity.value === null) return "";
-  return `${quantity.value}${quantity.unit ? ` ${quantity.unit}` : ""}`.trim();
+  const numeric = Number(quantity.value);
+  const value = Number.isFinite(numeric) ? numeric.toFixed(2) : quantity.value;
+  return `${value}${quantity.unit ? ` ${quantity.unit}` : ""}`.trim();
 }
 
 function mapValues(obj, mapper) {
@@ -814,13 +816,25 @@ function documentDate(item) {
 function normalizeDate(value) {
   if (!value) return "";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(date);
 }
 
 function normalizeTime(value) {
   if (!value) return "";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(11, 16);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  }).format(date);
 }
 
 function codeableText(item) {
@@ -873,6 +887,56 @@ function toNumber(value, fallback) {
   return match ? Number(match[0]) : fallback;
 }
 
+function formatNumericValue(value) {
+  const text = String(value);
+  if (/^-?\d+(\.\d+)?$/.test(text)) return Number(text).toFixed(2);
+  return text.replace(/(-?\d+\.\d{2})\d+/g, '$1');
+}
+
+function normalizeLabLabel(label) {
+  const map = {
+    Hemoglobin: 'Hb',
+    'Platelet count': 'Plt',
+    Leukocytes: 'WBC',
+    Creatinine: 'Cr',
+    'Urea Nitrogen': 'BUN',
+    Potassium: 'K',
+    Sodium: 'Na',
+    Chloride: 'Cl',
+    Glucose: 'Glucose',
+    'C-Reactive Protein': 'CRP'
+  };
+  return map[label] || label;
+}
+
+function mapLabCategory(label) {
+  const text = String(label || '').toLowerCase();
+  if (/wbc|rbc|hemoglobin|hematocrit|platelet|cbc|neutrophil|lymphocyte/.test(text)) return 'CBC';
+  if (/sodium|potassium|chloride|calcium|magnesium|phosphate/.test(text)) return '전해질';
+  if (/bun|creatinine|egfr|uric/.test(text)) return '신장기능';
+  if (/ast|alt|alp|bilirubin|albumin|protein/.test(text)) return '간기능';
+  if (/crp|esr|procalcitonin|lactate/.test(text)) return '염증검사';
+  if (/ph|pco2|po2|hco3|abg|blood gas/.test(text)) return '혈액가스';
+  if (/pt|inr|aptt|fibrinogen|d-dimer/.test(text)) return '응고검사';
+  if (/urine|ua|ketone|specific gravity/.test(text)) return '요검사';
+  if (/glucose|cholesterol|triglyceride|amylase|lipase/.test(text)) return '화학검사';
+  return '기타';
+}
+
+function isCurrentStatus(status) {
+  const text = String(status || '').toLowerCase();
+  if (!text) return true;
+  return !['completed', 'entered-in-error', 'stopped', 'inactive', 'revoked', 'cancelled', 'resolved'].includes(text);
+}
+
+function buildNursingProblemText(diagnosisList, serviceRequests, carePlans) {
+  const lines = [];
+  diagnosisList.slice(0, 3).forEach((item) => lines.push(`- 주요 문제: ${item}`));
+  serviceRequests.slice(0, 2).forEach((item) => lines.push(`- 요청사항: ${serviceRequestLabel(item)}`));
+  carePlans.slice(0, 2).forEach((item) => lines.push(`- 간호계획: ${carePlanTitle(item)}`));
+  return lines.join('\n') || '간호문제 정보 없음';
+}
+
 function clampHour(value) {
   const hour = parseInt(String(value || "08:00").slice(0, 2), 10);
   if (Number.isNaN(hour)) return 8;
@@ -880,7 +944,7 @@ function clampHour(value) {
 }
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return normalizeDate(new Date());
 }
 
 function jsonResponse(statusCode, body) {
