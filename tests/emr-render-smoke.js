@@ -102,6 +102,7 @@ async function main() {
   assert(/class="longitudinal-panel"/.test(html));
   assert(/선택 분석기간/.test(html));
   assert(/전체 재원기간/.test(html));
+  assert(!/\((disorder|finding|situation|procedure)\)/i.test(html));
   assert(/S - Situation/.test(html));
   assert(/B - Background/.test(html));
   assert(/A - Assessment/.test(html));

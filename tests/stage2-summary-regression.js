@@ -594,6 +594,7 @@ function main() {
   );
   assert(/class="longitudinal-panel"/.test(emrHtml));
   assert(/class="longitudinal-group"/.test(emrHtml));
+  assert(/longitudinal-concise-line/.test(emrHtml));
   assert(!/점수 분해/.test(emrHtml));
   assert(!/>\s*\d+점\s*</.test(emrHtml));
   assert(/V\/S 시트 보기|Lab 보기/.test(watchHtml));
@@ -603,12 +604,15 @@ function main() {
   const realtimeContext = api.getRealtimeDateContext(selectedRangePatient);
 
   assert.strictEqual(realtimeContext.displayByRaw['2026-03-16'], api.getKoreanNowParts().date);
-  assert(scopedAnalysis.longitudinalSummary.sections.identity.some((item) => /Cerebral Infarction/i.test(item.summary)));
-  assert(scopedAnalysis.longitudinalSummary.sections.careFrame.some((item) => /walker|Assist ambulation/i.test(item.summary)));
+  assert(scopedAnalysis.longitudinalSummary.sections.identity.some((item) => /뇌경색/.test(item.summary)));
+  assert(scopedAnalysis.longitudinalSummary.sections.careFrame.some((item) => /보행기 보조 보행|walker|Assist ambulation/i.test(item.summary)));
   assert(scopedAnalysis.longitudinalSummary.sections.careFrame.every((item) => !/Absolute bed rest/i.test(item.summary)));
   assert.strictEqual(scopedAnalysis.longitudinalSummary.selectedDayCount, 1);
   assert(/\d{4}-\d{2}-\d{2}/.test(scopedAnalysis.longitudinalSummary.fullStayRange.start));
   assert(/\d{4}-\d{2}-\d{2}/.test(scopedAnalysis.longitudinalSummary.displayDateRange.end));
+  const watchAnalysis = api.buildHandoffAnalysis(watchLinkPatient, watchDates);
+  const watchBasis = (watchAnalysis.longitudinalSummary.sections.watchItems[0]?.clinicalBasis || []).join(' | ');
+  assert(watchBasis.includes(api.getKoreanNowParts().date));
 
   console.log('Stage 2 summary regression test passed.');
 }

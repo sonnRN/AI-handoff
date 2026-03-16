@@ -97,6 +97,7 @@ function detectSummaryWarnings(result) {
   const careFrame = result.careFrame.join(' | ');
   const carryover = result.carryover.join(' | ');
   const persistent = result.persistent.join(' | ');
+  const concise = String(result.conciseSummary || '');
 
   if (/counsel|education|nutrition|smoking|addiction|consult/i.test(activity)) {
     warnings.push(`activity-noise:${activity}`);
@@ -115,6 +116,13 @@ function detectSummaryWarnings(result) {
   }
   if (/FHIR 진단 정보 없음|간호문제 정보 없음|정보 없음/i.test(persistent)) {
     warnings.push(`persistent-placeholder-noise:${persistent}`);
+  }
+
+  if (/\((disorder|finding|situation|procedure)\)/i.test(concise)) {
+    warnings.push(`raw-fhir-suffix:${concise}`);
+  }
+  if (/Recommendation to|physical exercise|Exercise therapy/i.test(concise)) {
+    warnings.push(`english-handoff-phrase:${concise}`);
   }
 
   return warnings;
@@ -140,18 +148,19 @@ async function main() {
     }
 
     const normalizedTimeline = api.buildNormalizedDailyTimeline(detail, dates);
-    const longitudinalSummary = api.buildLongitudinalPatientSummary(detail, normalizedTimeline);
+    const analysis = api.buildHandoffAnalysis(detail, dates);
+    const longitudinalSummary = analysis.longitudinalSummary;
     const latest = normalizedTimeline[normalizedTimeline.length - 1];
 
     const result = {
       id: detail.id,
       name: detail.name,
-      diagnosis: detail.diagnosis,
+      diagnosis: longitudinalSummary.sections?.identity?.[0]?.summary || detail.diagnosis,
       dateCount: dates.length,
       latestActivity: latest.clinicalStatus?.activity || '-',
-      careFrame: longitudinalSummary.overview?.careFrame || [],
-      persistent: longitudinalSummary.overview?.persistentConcerns || [],
-      carryover: longitudinalSummary.overview?.carryoverItems || [],
+      careFrame: (longitudinalSummary.sections?.careFrame || []).map((item) => item.summary),
+      persistent: (longitudinalSummary.sections?.persistentConcerns || []).map((item) => item.summary),
+      carryover: (longitudinalSummary.sections?.carryoverItems || []).map((item) => item.summary),
       conciseSummary: longitudinalSummary.conciseSummary || ''
     };
     result.warnings = detectSummaryWarnings(result);

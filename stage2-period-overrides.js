@@ -204,6 +204,134 @@ function updateAIRangeMeta(patient, startIdx, endIdx) {
   `;
 }
 
+const LOCALIZED_TERM_RULES = [
+  [/\s*\((disorder|finding|situation|procedure|physical object|observable entity|qualifier value|morphologic abnormality)\)/gi, ''],
+  [/\bHistory of cardiac arrest\b/gi, '심정지 과거력'],
+  [/\bHistory of myocardial infarction\b/gi, '심근경색 과거력'],
+  [/\bChronic congestive heart failure\b/gi, '만성 울혈성 심부전'],
+  [/\bChronic obstructive bronchitis\b/gi, '만성 폐쇄성 기관지염'],
+  [/\bViral sinusitis\b/gi, '바이러스성 부비동염'],
+  [/\bAcute bacterial sinusitis\b/gi, '급성 세균성 부비동염'],
+  [/\bAcute viral pharyngitis\b/gi, '급성 바이러스성 인두염'],
+  [/\bAcute bronchitis\b/gi, '급성 기관지염'],
+  [/\bOtitis media\b/gi, '중이염'],
+  [/\bHyperlipidemia\b/gi, '고지혈증'],
+  [/\bHypertension\b/gi, '고혈압'],
+  [/\bCardiac Arrest\b/gi, '심정지'],
+  [/\bSprain of ankle\b/gi, '발목 염좌'],
+  [/\bDrug overdose\b/gi, '약물 과다복용'],
+  [/\bLaceration of hand\b/gi, '손 열상'],
+  [/\bChronic pain\b/gi, '만성 통증'],
+  [/\bInjury of medial collateral ligament of knee\b/gi, '무릎 내측측부인대 손상'],
+  [/\bShellfish allergy\b/gi, '조개류 알레르기'],
+  [/\bAllergy to grass pollen\b/gi, '잔디 꽃가루 알레르기'],
+  [/\bFirst degree burn\b/gi, '1도 화상'],
+  [/\bBurn injury\b/gi, '화상'],
+  [/\bOsteoarthritis of knee\b/gi, '무릎 골관절염'],
+  [/\bMyocardial infarction\b/gi, '심근경색'],
+  [/\bCoronary Heart Disease\b/gi, '관상동맥질환'],
+  [/\bFamilial Alzheimer's disease of early onset\b/gi, '조기 발병 가족성 알츠하이머병'],
+  [/\bAtrial Fibrillation\b/gi, '심방세동'],
+  [/\bWhiplash injury to neck\b/gi, '경추 편타 손상'],
+  [/\bNormal pregnancy\b/gi, '정상 임신'],
+  [/\bBody mass index 30\+\s*-\s*obesity\b/gi, 'BMI 30 이상 비만'],
+  [/\bCerebral Infarction\b/gi, '뇌경색'],
+  [/\bCerebral Infraction\b/gi, '뇌경색'],
+  [/\bStroke\b/gi, '뇌졸중'],
+  [/\bSepsis\b/gi, '패혈증'],
+  [/\bSelf-care deficit\b/gi, '자가간호결핍'],
+  [/\bFall risk\b/gi, '낙상 위험'],
+  [/\bRecommendation to avoid exercise\b/gi, '운동 제한 권고'],
+  [/\bRecommendation to rest\b/gi, '안정 권고'],
+  [/\bExercise therapy\b/gi, '운동 치료'],
+  [/\bphysical exercise\b/gi, '활동 가능'],
+  [/\bPhysical activity target light exercise\b/gi, '가벼운 활동 권고'],
+  [/\bJoint mobility exercises\b/gi, '관절 운동'],
+  [/\bAbsolute bed rest\b/gi, '절대 침상 안정'],
+  [/\bBed rest\b/gi, '침상 안정'],
+  [/\bAssist ambulation with walker\b/gi, '보행기 보조 보행'],
+  [/\bRest, ice, compression and elevation treatment programme\b/gi, 'RICE 처치 중'],
+  [/\bPeripheral IV\b/gi, '말초정맥로'],
+  [/\bRoom air\b/gi, '실내 공기'],
+  [/\bBrain MRI\b/gi, '뇌 MRI'],
+  [/\bBrain CT\b/gi, '뇌 CT'],
+  [/\bacute infarction\b/gi, '급성 경색'],
+  [/\binfarction\b/gi, '경색'],
+  [/\bextension\b/gi, '진행'],
+  [/\bRt\.\s*/gi, '우측 '],
+  [/\bLt\.\s*/gi, '좌측 '],
+  [/\bleft\b/gi, '좌측'],
+  [/\bright\b/gi, '우측'],
+  [/\bMCA\b/g, 'MCA'],
+  [/\bmonitoring\b/gi, '관찰'],
+  [/\bconfirmed\b/gi, '확인됨'],
+  [/\bacute\b/gi, '급성'],
+  [/\bneuro\b/gi, '신경학적']
+];
+
+function localizeClinicalDisplayText(text) {
+  let localized = normalizeMedicalTerm(String(text || ''));
+  LOCALIZED_TERM_RULES.forEach(([pattern, replacement]) => {
+    localized = localized.replace(pattern, replacement);
+  });
+  localized = localized
+    .replace(/\s+\/\s+/g, ' / ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+,/g, ',')
+    .replace(/\s+\./g, '.')
+    .trim();
+  return localized || '-';
+}
+
+function mapDatesInText(patient, text) {
+  const context = getRealtimeDateContext(patient);
+  let mapped = String(text || '');
+  Object.entries(context.displayByRaw || {}).forEach(([rawDate, displayDate]) => {
+    mapped = mapped.replace(new RegExp(rawDate.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g'), displayDate);
+  });
+  return mapped;
+}
+
+function normalizeSummaryHeadline(item) {
+  if (String(item?.id || '').startsWith('identity:admission:')) {
+    return `입원 배경: ${String(item.id).slice('identity:admission:'.length)}`;
+  }
+  return item?.summary || '-';
+}
+
+function localizeSummaryItem(patient, item) {
+  const localizedSummary = localizeClinicalDisplayText(mapDatesInText(patient, normalizeSummaryHeadline(item)));
+  const localizedDetail = localizeClinicalDisplayText(mapDatesInText(patient, item.detail || ''));
+  const localizedBasis = (item.clinicalBasis || [])
+    .slice(0, 4)
+    .map((entry) => localizeClinicalDisplayText(mapDatesInText(patient, entry)));
+
+  return {
+    ...item,
+    summary: localizedSummary,
+    detail: localizedDetail,
+    clinicalBasis: localizedBasis,
+    displaySourceDates: (item.sourceDates || []).map((date) => mapPatientDate(patient, date))
+  };
+}
+
+function renderLongitudinalConciseSummary(summary) {
+  const lines = Array.isArray(summary?.conciseLines) && summary.conciseLines.length
+    ? summary.conciseLines
+    : String(summary?.conciseSummary || '')
+      .split(/\s*\|\s*/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+  if (!lines.length) {
+    return '<div class="longitudinal-concise-line">요약 정보 없음</div>';
+  }
+
+  return lines
+    .map((line) => `<div class="longitudinal-concise-line">${escapeHtml(localizeClinicalDisplayText(line))}</div>`)
+    .join('');
+}
+
 function bindAIRangeSelectorMetaHandlers() {
   const startSelect = document.getElementById('aiRangeStart');
   const endSelect = document.getElementById('aiRangeEnd');
@@ -235,10 +363,7 @@ function startRealtimeDateRefreshLoop() {
 }
 
 function annotateSummaryItemDates(patient, item) {
-  return {
-    ...item,
-    displaySourceDates: (item.sourceDates || []).map((date) => mapPatientDate(patient, date))
-  };
+  return localizeSummaryItem(patient, item);
 }
 
 function buildScopedLongitudinalSummary(patient, fullTimeline, selectedTimeline) {
@@ -275,6 +400,7 @@ function buildScopedLongitudinalSummary(patient, fullTimeline, selectedTimeline)
     ...selectedSummary,
     patientId: patient.id,
     sections,
+    conciseLines: narrativeLines,
     conciseSummary: narrativeLines.join(' | ') || `${patient.name || '환자'} 요약 정보가 부족합니다.`,
     dateRange: {
       start: selectedStartRaw,
@@ -324,7 +450,7 @@ function renderLongitudinalSummaryPanel(summary, patient) {
         <div class="longitudinal-chip-row">
           ${chipItems.map((item) => `<span class="longitudinal-chip">${escapeHtml(item)}</span>`).join('')}
         </div>
-        <div class="longitudinal-concise">${escapeHtml(summary.conciseSummary || '요약 정보 없음')}</div>
+        <div class="longitudinal-concise">${renderLongitudinalConciseSummary(summary)}</div>
         <div class="longitudinal-groups">
           ${renderLongitudinalSummaryGroup('환자 정체성', '입원 배경과 핵심 진단 등 전체 재원기간에서 유지해야 하는 정보', summary.sections.identity, '정체성 요약 정보 없음', patientId)}
           ${renderLongitudinalSummaryGroup('현재 관리 틀', '선택한 분석기간 안에서 현재 유지 중인 관리 조건', summary.sections.careFrame, '현재 관리 틀 정보 없음', patientId)}
@@ -450,7 +576,7 @@ updateDashboard = async function (pid) {
   setText('pAge', `${patient.gender}/${patient.age}`);
   setText('pBlood', patient.bloodType);
   setText('pBody', patient.bodyInfo);
-  setHTML('pDiag', patient.diagnosis);
+  setHTML('pDiag', localizeClinicalDisplayText(patient.diagnosis));
   setText('pAdmit', mapPatientDate(patient, parseIsoDateParts(patient.admitDate) ? patient.admitDate : getPatientRawDates(patient)[0]));
   setText('pDoc', patient.doctor);
   setText('pIso', patient.isolation);
@@ -460,7 +586,7 @@ updateDashboard = async function (pid) {
 
   const historyStr = (data.pastHistory || []).map((item) => `<div>• ${item}</div>`).join('');
   setHTML('pastHistoryList', historyStr || '-');
-  setHTML('admitReason', `<div class="admit-reason-full">${formatMultilineText(patient.admissionNote || patient.admitReason)}</div>`);
+  setHTML('admitReason', `<div class="admit-reason-full">${formatMultilineText(localizeClinicalDisplayText(patient.admissionNote || patient.admitReason))}</div>`);
   setHTML('nursingProblem', formatMultilineText(data.nursingProblem));
 
   const handover = data.handover || {};
@@ -511,7 +637,7 @@ updateDashboard = async function (pid) {
 
   const aiPatientEl = document.getElementById('aiPanelPatient');
   if (aiPatientEl) {
-    aiPatientEl.textContent = `${patient.name} (${patient.age}/${patient.gender}) - ${patient.diagnosis}`;
+    aiPatientEl.textContent = `${patient.name} (${patient.age}/${patient.gender}) - ${localizeClinicalDisplayText(patient.diagnosis)}`;
   }
 
   refreshAIRangeSelectors(patient, true);
@@ -727,9 +853,69 @@ buildHandoffAnalysis = function (patient, dates) {
   };
 };
 
+generateNarrativeSBAR = function (patient, startData, endData, dates) {
+  const analysis = buildHandoffAnalysis(patient, dates);
+  const historyList = (endData.pastHistory || []).join(', ');
+  const historyHtml = historyList
+    ? `<div style="margin-bottom:4px; color:#424242; font-size:11px;"><b>중요 과거력</b> ${escapeHtml(localizeClinicalDisplayText(historyList))}</div>`
+    : '';
+  const longitudinalSummaryHtml = renderLongitudinalSummaryPanel(analysis.longitudinalSummary, patient);
+  const situationItems = analysis.sbarPayload.situation.length
+    ? renderHandoffBulletList(analysis.sbarPayload.situation)
+    : '<div style="color:#666;">중대한 상태변화는 확인되지 않았습니다.</div>';
+  const backgroundCards = analysis.sbarPayload.background.length
+    ? analysis.sbarPayload.background.map((item) => renderBackgroundCard(item)).join('')
+    : '<div style="padding:5px; color:#666;">선택 기간 동안 핵심 배경 변화가 확인되지 않았습니다.</div>';
+  const assessmentItems = analysis.sbarPayload.assessment.length
+    ? renderAssessmentList(analysis.sbarPayload.assessment)
+    : '<div style="color:#666;">즉시 우선순위로 분류된 문제는 없습니다.</div>';
+  const recommendationItems = analysis.sbarPayload.recommendation.length
+    ? renderHandoffBulletList(analysis.sbarPayload.recommendation)
+    : '<div style="color:#666;">현재 계획 유지 및 routine monitoring 권장.</div>';
+
+  const assessmentHtml = `
+    ${assessmentItems}
+    <div style="display:flex; flex-direction:column; gap:10px; margin-top:12px;">
+      <button class="sbar-link-btn" onclick="openLabModal('${patient.id}', 'Hematology')">주요 검사 결과 자세히 보기</button>
+      <button class="sbar-link-btn" onclick="openSpecialSummaryModal('${patient.id}')">영상 / 특수 검사 보기</button>
+      <button class="sbar-link-btn" onclick="alert('협진: ${endData.consults ? endData.consults : '정보 없음'}')">협진 요청 현황 보기</button>
+    </div>
+  `;
+
+  return `
+    ${longitudinalSummaryHtml}
+    <div class="sbar-section">
+      <div class="sbar-header situation">S - Situation</div>
+      <div class="sbar-body">
+        <div style="margin-bottom:4px;"><b>현재 간호 초점:</b> ${escapeHtml(localizeClinicalDisplayText(endData.nursingProblem || '-'))}</div>
+        <div style="margin-bottom:4px;"><b>입원 배경:</b> ${escapeHtml(localizeClinicalDisplayText(patient.admissionNote || patient.admitReason || '-'))}</div>
+        ${historyHtml}
+        <div style="margin-bottom:8px;"><b>현재 활력:</b> BP ${escapeHtml(endData.vital.bp)}, HR ${escapeHtml(String(endData.vital.hr))}, BT ${escapeHtml(String(endData.vital.bt))}, SpO2 ${escapeHtml(String(endData.vital.spo2))}%</div>
+        ${situationItems}
+      </div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-header background">B - Background</div>
+      <div class="sbar-body">${backgroundCards}</div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-header assessment">A - Assessment</div>
+      <div class="sbar-body">${assessmentHtml}</div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-header recommendation">R - Recommendation</div>
+      <div class="sbar-body">
+        ${recommendationItems}
+        ${renderRoutineOrderLink(endData, dates)}
+      </div>
+    </div>
+  `;
+};
+
 if (window.handoffAppApi) {
   window.handoffAppApi.syncDateList = syncDateList;
   window.handoffAppApi.getRealtimeDateContext = getRealtimeDateContext;
   window.handoffAppApi.mapPatientDate = mapPatientDate;
   window.handoffAppApi.buildHandoffAnalysis = buildHandoffAnalysis;
+  window.handoffAppApi.generateNarrativeSBAR = generateNarrativeSBAR;
 }

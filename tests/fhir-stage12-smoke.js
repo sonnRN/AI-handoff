@@ -117,7 +117,8 @@ async function main() {
   }
 
   const normalizedTimeline = api.buildNormalizedDailyTimeline(detail, dates);
-  const longitudinalSummary = api.buildLongitudinalPatientSummary(detail, normalizedTimeline);
+  const analysis = api.buildHandoffAnalysis(detail, dates);
+  const longitudinalSummary = analysis.longitudinalSummary;
 
   if (normalizedTimeline.length !== dates.length) {
     throw new Error(`Normalized timeline mismatch: expected ${dates.length}, got ${normalizedTimeline.length}`);
@@ -125,6 +126,9 @@ async function main() {
 
   if (!longitudinalSummary || !longitudinalSummary.conciseSummary) {
     throw new Error('Longitudinal summary did not produce a concise summary');
+  }
+  if (/\((disorder|finding|situation|procedure)\)/i.test(longitudinalSummary.conciseSummary)) {
+    throw new Error('Localized concise summary still contains raw FHIR classification suffixes');
   }
 
   const latest = normalizedTimeline[normalizedTimeline.length - 1];

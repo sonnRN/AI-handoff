@@ -377,9 +377,15 @@ textarea {
 
 .admit-reason-full {
   white-space: normal;
-  word-break: keep-all;
+  word-break: break-word;
   overflow: visible;
   line-height: 1.7;
+}
+
+#admitReason {
+  max-height: none !important;
+  overflow: visible !important;
+  min-height: auto;
 }
 
 .schedule-table {
@@ -2814,6 +2820,10 @@ textarea {
   color: #263238;
   font-size: 12px;
   line-height: 1.7;
+}
+
+.longitudinal-concise-line + .longitudinal-concise-line {
+  margin-top: 4px;
 }
 
 .longitudinal-groups {
