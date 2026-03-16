@@ -16,13 +16,15 @@ const VITAL_CODES = {
 exports.handler = async function handler(event) {
   try {
     const id = event.queryStringParameters && event.queryStringParameters.id;
+    const requestedCount = event.queryStringParameters && event.queryStringParameters.count;
+    const patientCount = normalizePatientCount(requestedCount);
 
     if (id) {
       const detail = await fetchPatientDetail(id);
       return jsonResponse(200, detail);
     }
 
-    const patients = await fetchPatientList();
+    const patients = await fetchPatientList(patientCount);
     return jsonResponse(200, { patients, source: "smart-health-it-sandbox" });
   } catch (error) {
     return jsonResponse(500, {
@@ -32,12 +34,18 @@ exports.handler = async function handler(event) {
   }
 };
 
-async function fetchPatientList() {
-  const bundle = await fetchFHIR(`/Patient?_count=${DEFAULT_PATIENT_COUNT}&_elements=id,name,gender,birthDate`);
+async function fetchPatientList(count = DEFAULT_PATIENT_COUNT) {
+  const bundle = await fetchFHIR(`/Patient?_count=${count}&_elements=id,name,gender,birthDate`);
 
   return (bundle.entry || [])
     .map((entry, index) => normalizePatientSummary(entry.resource, index))
     .filter(Boolean);
+}
+
+function normalizePatientCount(value) {
+  const parsed = Number.parseInt(String(value || DEFAULT_PATIENT_COUNT), 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_PATIENT_COUNT;
+  return Math.max(1, Math.min(parsed, 20));
 }
 
 async function fetchPatientDetail(id) {
@@ -337,22 +345,23 @@ function buildMedicationOrders(medications, administrations) {
 
 function buildLineTubeSummary(devices, procedures, serviceRequests, observations) {
   const buckets = { lines: [], tubes: [], drains: [], vent: [] };
-  const add = (label, detail) => {
-    if (!label) return;
-    const item = { text: label, detail: detail || "FHIR 정보" };
-    const text = `${label} ${detail}`.toLowerCase();
-    if (/vent|trach|oxygen|intubat|cpap|bipap/i.test(text)) buckets.vent.push(item);
-    else if (/drain|hemovac|jp|chest tube/i.test(text)) buckets.drains.push(item);
-    else if (/tube|catheter|foley|peg|ng|og/i.test(text)) buckets.tubes.push(item);
-    else if (/line|iv|picc|central|port|cvc|arterial/i.test(text)) buckets.lines.push(item);
+  const add = (sourceType, label, detail) => {
+    const bucket = classifyClinicalStatusBucket(sourceType, label, detail);
+    if (!bucket) return;
+    buckets[bucket].push({ text: label, detail: detail || "FHIR 정보" });
   };
 
-  devices.filter((device) => isCurrentStatus(device.status)).forEach((device) => add(deviceLabel(device), device.status || ""));
-  procedures.filter((procedure) => isCurrentStatus(procedure.status)).forEach((procedure) => add(procedureLabel(procedure), procedure.status || ""));
-  serviceRequests.filter((request) => isCurrentStatus(request.status)).forEach((request) => add(serviceRequestLabel(request), request.status || ""));
+  devices
+    .filter((device) => isCurrentStatus(device.status))
+    .forEach((device) => add("device", deviceLabel(device), device.status || ""));
+  procedures
+    .filter((procedure) => isCurrentStatus(procedure.status))
+    .forEach((procedure) => add("procedure", procedureLabel(procedure), procedure.status || ""));
+  serviceRequests
+    .filter((request) => isCurrentStatus(request.status))
+    .forEach((request) => add("service_request", serviceRequestLabel(request), request.status || ""));
   observations.forEach((observation) => {
-    const label = observationLabel(observation);
-    if (/line|tube|drain|catheter|vent|oxygen/i.test(label)) add(label, observationValue(observation));
+    add("observation", observationLabel(observation), observationValue(observation));
   });
 
   return {
@@ -361,6 +370,108 @@ function buildLineTubeSummary(devices, procedures, serviceRequests, observations
     drains: dedupeItems(buckets.drains),
     vent: dedupeItems(buckets.vent)
   };
+}
+
+function classifyClinicalStatusBucket(sourceType, label, detail) {
+  const text = normalizeClinicalText(`${label || ""} ${detail || ""}`);
+  if (!text) return "";
+
+  const genericExclusions = [
+    /\bct\b/,
+    /\bmri\b/,
+    /x-ray/,
+    /ultrasound/,
+    /\bscan\b/,
+    /\bpanel\b/,
+    /\bculture\b/,
+    /\blipid\b/,
+    /complete blood count/,
+    /documentation/,
+    /\bencounter\b/,
+    /\bconsult\b/,
+    /\bcontrast\b/,
+    /\bstent\b/,
+    /arterial blood/,
+    /oxygen saturation/,
+    /\bspo2\b/
+  ];
+  if (genericExclusions.some((pattern) => pattern.test(text))) return "";
+
+  const ventPatterns = [
+    /ventilator/,
+    /\bvent\b/,
+    /trach/,
+    /tracheost/,
+    /intubat/,
+    /nasal cannula/,
+    /non-rebreather/,
+    /\bhfnc\b/,
+    /high flow/,
+    /\becmo\b/,
+    /\bcpap\b/,
+    /\bbipap\b/,
+    /oxygen therapy/,
+    /\bo2\b/,
+    /oxygen/
+  ];
+  const linePatterns = [
+    /peripheral iv/,
+    /\bmidline\b/,
+    /\bpicc\b/,
+    /central line/,
+    /\bcvc\b/,
+    /\bport\b/,
+    /arterial line/,
+    /\ba-line\b/,
+    /\biv\b/
+  ];
+  const tubePatterns = [
+    /\bfoley\b/,
+    /\bcatheter\b/,
+    /\bng\b/,
+    /\bog\b/,
+    /\bpeg\b/,
+    /\bg-tube\b/,
+    /feeding tube/,
+    /urinary catheter/,
+    /\btube\b/
+  ];
+  const drainPatterns = [
+    /\bdrain\b/,
+    /hemovac/,
+    /\bjp\b/,
+    /jackson-pratt/,
+    /chest tube/,
+    /biliary drain/,
+    /nephrostomy/
+  ];
+  const explicitDevicePatterns = [...ventPatterns, ...linePatterns, ...tubePatterns, ...drainPatterns];
+
+  if (sourceType === "service_request" && !explicitDevicePatterns.some((pattern) => pattern.test(text))) {
+    return "";
+  }
+
+  if (sourceType === "procedure") {
+    const procedureNoise = [/injection/, /\biud\b/, /documentation/, /\bstent\b/];
+    if (procedureNoise.some((pattern) => pattern.test(text)) && !explicitDevicePatterns.some((pattern) => pattern.test(text))) {
+      return "";
+    }
+  }
+
+  if (ventPatterns.some((pattern) => pattern.test(text))) return "vent";
+  if (drainPatterns.some((pattern) => pattern.test(text))) return "drains";
+  if (tubePatterns.some((pattern) => pattern.test(text))) return "tubes";
+  if (linePatterns.some((pattern) => pattern.test(text))) return "lines";
+
+  return "";
+}
+
+function normalizeClinicalText(text) {
+  return String(text || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 }
 
 function buildHourlyTimeline(date, dayVital, events) {
@@ -518,12 +629,69 @@ function buildAdmissionNote(encounter, diagnosisList, allergyList, procedureList
 }
 
 function findActivity(carePlans, encounter) {
-  const carePlanActivity = carePlans
+  const carePlanActivities = carePlans
     .flatMap((item) => item.activity || [])
     .map((activity) => codeableText(activity.detail && activity.detail.code) || activity.detail?.description || "")
-    .find(Boolean);
+    .map((text) => normalizeActivityText(text))
+    .filter(Boolean);
 
-  return carePlanActivity || codeableText(encounter && encounter.type && encounter.type[0]) || "활동 정보 없음";
+  if (carePlanActivities.length) return carePlanActivities[0];
+
+  const encounterActivity = normalizeActivityText(codeableText(encounter && encounter.type && encounter.type[0]));
+  return encounterActivity || "-";
+}
+
+function normalizeActivityText(text) {
+  const source = normalizeClinicalText(text);
+  if (!source) return "";
+
+  const exclusionPatterns = [
+    /counsel/,
+    /education/,
+    /teaching/,
+    /nutrition/,
+    /diet/,
+    /smoking/,
+    /addiction/,
+    /behavior/,
+    /psych/,
+    /therapy session/,
+    /consult/,
+    /documentation/,
+    /screening/,
+    /assessment/,
+    /follow-up/,
+    /blepharoplasty/,
+    /cataract/,
+    /medication/
+  ];
+  if (exclusionPatterns.some((pattern) => pattern.test(source))) return "";
+
+  const activityPatterns = [
+    /bed rest/,
+    /rest/,
+    /ambulat/,
+    /out of bed/,
+    /\boob\b/,
+    /chair/,
+    /wheelchair/,
+    /walk/,
+    /exercise/,
+    /activity as tolerated/,
+    /\baat\b/,
+    /range of motion/,
+    /\brom\b/,
+    /weight bearing/,
+    /mobil/,
+    /turn/,
+    /reposition/,
+    /fall precaution/,
+    /assist/,
+    /progressive mobility/
+  ];
+  if (!activityPatterns.some((pattern) => pattern.test(source))) return "";
+
+  return String(text || "").replace(/\s+/g, " ").trim();
 }
 
 function findIsolation(serviceRequests, conditions, documents) {
@@ -1071,6 +1239,36 @@ function normalizeLabLabel(label) {
   return map[label] || label;
 }
 
+function getLabStatus(key, value) {
+  if (value === '-' || typeof value !== 'string') return { status: 'normal' };
+
+  const numeric = parseFloat(value.replace(/[^0-9.-]/g, ''));
+  if (Number.isNaN(numeric)) return { status: 'normal' };
+
+  let range = { min: -Infinity, max: Infinity };
+
+  if (key === 'WBC') range = { min: 4.0, max: 10.0 };
+  else if (key === 'Hb') range = { min: 12.0, max: 16.0 };
+  else if (key === 'Plt') range = { min: 150, max: 450 };
+  else if (key === 'Na') range = { min: 135, max: 145 };
+  else if (key === 'K') range = { min: 3.5, max: 5.0 };
+  else if (key === 'Cl') range = { min: 98, max: 107 };
+  else if (key === 'BUN') range = { min: 8, max: 20 };
+  else if (key === 'Cr') range = { min: 0.6, max: 1.2 };
+  else if (key === 'AST') range = { min: 0, max: 40 };
+  else if (key === 'ALT') range = { min: 0, max: 40 };
+  else if (key === 'CRP') range = { min: 0, max: 0.5 };
+  else if (key === 'Lactate') range = { min: 0, max: 2.0 };
+  else if (key === 'pH') range = { min: 7.35, max: 7.45 };
+  else if (key === 'pCO2') range = { min: 35, max: 45 };
+  else if (key === 'pO2') range = { min: 80, max: 100 };
+  else if (key === 'HCO3') range = { min: 22, max: 26 };
+
+  if (numeric > range.max) return { status: 'high' };
+  if (numeric < range.min) return { status: 'low' };
+  return { status: 'normal' };
+}
+
 function mapLabCategory(label) {
   const text = String(label || '').toLowerCase();
   if (/wbc|rbc|hemoglobin|hematocrit|platelet|cbc|neutrophil|lymphocyte/.test(text)) return 'CBC';
@@ -1094,9 +1292,20 @@ function isCurrentStatus(status) {
 function buildNursingProblemText(diagnosisList, serviceRequests, carePlans) {
   const lines = [];
   diagnosisList.slice(0, 3).forEach((item) => lines.push(`- 주요 문제: ${item}`));
-  serviceRequests.slice(0, 2).forEach((item) => lines.push(`- 요청사항: ${serviceRequestLabel(item)}`));
-  carePlans.slice(0, 2).forEach((item) => lines.push(`- 간호계획: ${carePlanTitle(item)}`));
+  carePlans
+    .map((item) => carePlanTitle(item))
+    .filter((item) => isMeaningfulNursingProblemText(item))
+    .slice(0, 2)
+    .forEach((item) => lines.push(`- 간호 초점: ${item}`));
   return lines.join('\n') || '간호문제 정보 없음';
+}
+
+function isMeaningfulNursingProblemText(text) {
+  const source = normalizeClinicalText(text);
+  if (!source) return false;
+  if (/\bct\b|\bmri\b|x-ray|ultrasound|panel|culture|documentation|consult|service request/.test(source)) return false;
+  if (/therapy|counsel|education|teaching|exercise therapy|respiratory therapy|physical therapy|occupational therapy|speech therapy/.test(source)) return false;
+  return /위험|통증|낙상|욕창|피부|상처|호흡|산소|감염|출혈|의식|신경|혈당|배액|격리|pain|fall|pressure|skin|wound|resp|oxygen|infection|bleed|neuro|glycemic|drain/.test(source);
 }
 
 function clampHour(value) {
@@ -1140,6 +1349,10 @@ function buildDailyData(input) {
     const dailyMedicationSet = filterMedicationSetForDate(input.medications || [], input.administrations || [], date, input.dateMap || {});
     const dailyMedicationOrders = buildMedicationOrders(dailyMedicationSet.medications, dailyMedicationSet.administrations);
     const dailyDiagnosisList = unique(dailyConditions.map(conditionLabel)).slice(0, 6);
+    const dailyDoctorOrders = buildDoctorOrders(dailyMedicationOrders, dailyServiceRequests, dailyCarePlans);
+    const dailyLabs = input.observationSummary.labsByDate[date] || input.observationSummary.latestLabs || {};
+    const dailyNursingTasks = buildNursingTasks(input.lineTube, dailyCarePlans, dailyDocuments);
+    const dailyPlanItems = buildPlanItems(dailyDiagnosisList.length ? dailyDiagnosisList : input.diagnosisList, dailyCarePlans, dailyServiceRequests);
     const eventNotes = [
       ...(input.observationSummary.eventsByDate[date] || []),
       ...(administrationEvents[date] || []),
@@ -1171,9 +1384,9 @@ function buildDailyData(input) {
         inj: dailyMedicationOrders.inj,
         po: dailyMedicationOrders.po
       },
-      labs: input.observationSummary.labsByDate[date] || input.observationSummary.latestLabs || {},
+      labs: dailyLabs,
       specials: buildSpecialsForDate(dailyReports, dailyProcedures, dailyDocuments),
-      docOrders: buildDoctorOrders(dailyMedicationOrders, dailyServiceRequests, dailyCarePlans),
+      docOrders: dailyDoctorOrders,
       medSchedule: buildMedicationSchedule(dailyMedicationOrders),
       todoList: buildTodoList(
         dailyDiagnosisList.length ? dailyDiagnosisList : input.diagnosisList,
@@ -1182,16 +1395,259 @@ function buildDailyData(input) {
         date,
         input.dates[input.dates.length - 1]
       ),
-      nursingTasks: buildNursingTasks(input.lineTube, dailyCarePlans, dailyDocuments),
-      plan: buildPlanItems(dailyDiagnosisList.length ? dailyDiagnosisList : input.diagnosisList, dailyCarePlans, dailyServiceRequests),
+      nursingTasks: dailyNursingTasks,
+      plan: dailyPlanItems,
       consults: buildConsults(dailyServiceRequests, dailyCarePlans),
       tMax: Number(dayVital.bt),
-      vital: dayVital
+      vital: dayVital,
+      handoffMeta: buildHandoffMeta({
+        date,
+        diagnosisList: dailyDiagnosisList.length ? dailyDiagnosisList : input.diagnosisList,
+        isolation: input.isolation || findIsolation(input.serviceRequests || [], input.conditions || [], input.documents || []),
+        activity: findActivity(dailyCarePlans.length ? dailyCarePlans : input.carePlans, input.latestEncounter),
+        cautionList: input.allergyList.slice(0, 3),
+        lineTube: input.lineTube,
+        doctorOrders: dailyDoctorOrders,
+        medicationOrders: dailyMedicationOrders,
+        vital: dayVital,
+        labs: dailyLabs,
+        nursingTasks: dailyNursingTasks,
+        planItems: dailyPlanItems,
+        serviceRequests: dailyServiceRequests,
+        carePlans: dailyCarePlans,
+        documents: dailyDocuments,
+        reports: dailyReports,
+        procedures: dailyProcedures
+      })
     };
   });
 
   propagateLabs(dayMap, input.dates);
   return dayMap;
+}
+
+function buildHandoffMeta(input) {
+  const activeOrders = unique([
+    ...(input.doctorOrders?.routine || []),
+    ...(input.doctorOrders?.prn || [])
+  ]);
+
+  return {
+    clinicalStatus: {
+      diagnoses: (input.diagnosisList || []).slice(0, 4),
+      isolation: input.isolation || "-",
+      activity: input.activity || "-",
+      caution: (input.cautionList || []).slice(0, 3),
+      lines: dedupeTextItems(input.lineTube?.lines || []),
+      tubes: dedupeTextItems(input.lineTube?.tubes || []),
+      drains: dedupeTextItems(input.lineTube?.drains || []),
+      vent: dedupeTextItems(input.lineTube?.vent || [])
+    },
+    orders: {
+      active: activeOrders,
+      routine: (input.doctorOrders?.routine || []).slice(0, 12),
+      prn: (input.doctorOrders?.prn || []).slice(0, 8),
+      medications: {
+        inj: toTextItems(input.medicationOrders?.inj || []),
+        po: toTextItems(input.medicationOrders?.po || []),
+        running: toTextItems(input.medicationOrders?.running || [])
+      }
+    },
+    vitals: summarizeVitalsForHandoff(input.vital),
+    labs: summarizeLabsForHandoff(input.labs),
+    nursingActions: buildNursingActionSnapshot(input),
+    sourceRefs: buildHandoffSourceRefs(input)
+  };
+}
+
+function dedupeTextItems(items) {
+  return unique((items || []).map((item) => typeof item === "string" ? item : item.text).filter(Boolean));
+}
+
+function toTextItems(items) {
+  return (items || []).map((item) => typeof item === "string" ? item : item.text).filter(Boolean);
+}
+
+function summarizeVitalsForHandoff(vital) {
+  const bp = String(vital?.bp || "120/80").split("/");
+  const systolic = toNumber(bp[0], 120);
+  const diastolic = toNumber(bp[1], 80);
+  const hr = toNumber(vital?.hr, 80);
+  const bt = toNumber(vital?.bt, 36.8);
+  const rr = toNumber(vital?.rr, 18);
+  const spo2 = toNumber(vital?.spo2, 98);
+  const abnormalFlags = [];
+
+  if (systolic < 90 || systolic >= 180) abnormalFlags.push("bp");
+  if (hr < 50 || hr >= 120) abnormalFlags.push("hr");
+  if (bt >= 38 || bt < 36) abnormalFlags.push("bt");
+  if (rr >= 24 || rr < 10) abnormalFlags.push("rr");
+  if (spo2 < 92) abnormalFlags.push("spo2");
+
+  return {
+    latest: {
+      bp: vital?.bp || "120/80",
+      hr: Math.round(hr),
+      bt: Number(bt.toFixed(1)),
+      rr: Math.round(rr),
+      spo2: Math.round(spo2)
+    },
+    abnormalFlags
+  };
+}
+
+function summarizeLabsForHandoff(labs) {
+  const flatLabs = flattenLabMap(labs);
+  const abnormalLabs = Object.keys(flatLabs).map((key) => {
+    const value = flatLabs[key];
+    const status = getLabStatus(key, String(value)).status;
+    return {
+      key,
+      value,
+      status
+    };
+  }).filter((item) => item.status !== "normal");
+
+  return {
+    latest: flatLabs,
+    abnormal: abnormalLabs.slice(0, 12)
+  };
+}
+
+function flattenLabMap(labs) {
+  const result = {};
+  Object.values(labs || {}).forEach((category) => {
+    Object.assign(result, category || {});
+  });
+  return result;
+}
+
+function buildNursingActionSnapshot(input) {
+  const confirmed = unique([
+    ...(input.nursingTasks || []).map((task) => task.text),
+    ...(input.carePlans || []).map((item) => carePlanTitle(item)),
+    ...(input.documents || []).map((item) => documentTitle(item))
+  ]).filter(Boolean);
+
+  const followUp = unique([
+    ...(input.planItems || []),
+    ...(input.serviceRequests || []).map((item) => serviceRequestLabel(item))
+  ]).filter(Boolean);
+  const pending = followUp.filter((item) => isMeaningfulCarryoverText(item));
+  const background = followUp.filter((item) => !pending.includes(item));
+
+  return {
+    completed: confirmed.slice(0, 8),
+    pending: pending.slice(0, 8),
+    followUp: followUp.slice(0, 8),
+    background: background.slice(0, 8)
+  };
+}
+
+function isMeaningfulCarryoverText(text) {
+  const source = normalizeClinicalText(text);
+  if (!source) return false;
+  if (isGenericFollowUpText(source)) return false;
+
+  const directActionPatterns = [
+    /재확인/,
+    /재평가/,
+    /확인/,
+    /사정/,
+    /모니터/,
+    /관찰/,
+    /보고/,
+    /교육/,
+    /드레싱/,
+    /채혈/,
+    /검체/,
+    /투약/,
+    /약물/,
+    /hold/,
+    /보류/,
+    /중지/,
+    /notify/,
+    /check/,
+    /monitor/,
+    /assess/,
+    /recheck/
+  ];
+  const responsibilityTargets = [
+    /라인/,
+    /튜브/,
+    /드레인/,
+    /카테터/,
+    /foley/,
+    /picc/,
+    /central line/,
+    /\biv\b/,
+    /산소/,
+    /oxygen/,
+    /혈당/,
+    /활력/,
+    /통증/,
+    /출혈/,
+    /상처/,
+    /배액/,
+    /소변/,
+    /\bi\/o\b/,
+    /낙상/,
+    /욕창/,
+    /격리/
+  ];
+  const timeSensitiveTestPatterns = [
+    /검사/,
+    /imaging/,
+    /\bct\b/,
+    /\bmri\b/,
+    /x-ray/,
+    /ultrasound/
+  ];
+  const timeSensitiveActionPatterns = [
+    /준비/,
+    /시행 여부/,
+    /결과 확인/,
+    /동의/,
+    /이송/,
+    /금식/,
+    /\bnpo\b/,
+    /전처치/
+  ];
+
+  if (directActionPatterns.some((pattern) => pattern.test(source))) return true;
+  if (responsibilityTargets.some((pattern) => pattern.test(source))) return true;
+  if (timeSensitiveTestPatterns.some((pattern) => pattern.test(source)) && timeSensitiveActionPatterns.some((pattern) => pattern.test(source))) {
+    return true;
+  }
+
+  return false;
+}
+
+function isGenericFollowUpText(text) {
+  const source = normalizeClinicalText(text);
+  if (!source) return true;
+
+  if (/경과 관찰/.test(source) && !/(활력|혈압|맥박|호흡|산소|혈당|소변|배액|출혈|의식|통증|상처|드레싱|라인|튜브|드레인|검사 결과|투약|약물)/.test(source)) {
+    return true;
+  }
+
+  if (/\bct\b|\bmri\b|x-ray|ultrasound|lipid panel|complete blood count|서비스 요청|검사 요청/.test(source) &&
+    !/(준비|확인|재확인|결과|시행 여부|동의|이송|금식|전처치)/.test(source)) {
+    return true;
+  }
+
+  return false;
+}
+
+function buildHandoffSourceRefs(input) {
+  return {
+    serviceRequests: (input.serviceRequests || []).length,
+    carePlans: (input.carePlans || []).length,
+    documents: (input.documents || []).length,
+    reports: (input.reports || []).length,
+    procedures: (input.procedures || []).length,
+    activeOrders: (input.doctorOrders?.routine || []).length + (input.doctorOrders?.prn || []).length
+  };
 }
 
 function buildHourlyTimeline(date, dayVital, events) {

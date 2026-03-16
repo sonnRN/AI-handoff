@@ -11,8 +11,22 @@ const patientDetailCache = new Map();
 let uiInitialized = false;
 const KOREA_TIMEZONE = 'Asia/Seoul';
 
+function unique(items) {
+  return Array.from(new Set((items || []).filter(Boolean)));
+}
+
+function getAppMode() {
+  return document.body?.dataset?.appMode || 'emr-demo';
+}
+
+function isEngineDemoMode() {
+  return getAppMode() === 'engine-demo';
+}
+
 document.addEventListener('DOMContentLoaded', function () {
-  initializeApp();
+  if (!isEngineDemoMode()) {
+    initializeApp();
+  }
 });
 
 async function initializeApp() {
@@ -56,6 +70,20 @@ async function loadPatientStore() {
       patientDetailCache.set(String(p.id), p);
     });
   }
+}
+
+async function ensurePatientStoreLoaded() {
+  if (patientStore.length) return patientStore;
+  await loadPatientStore();
+  return patientStore;
+}
+
+function getPatientStore() {
+  return patientStore;
+}
+
+function isUsingExternalData() {
+  return usingExternalData;
 }
 
 function updateDataSourceLabel() {
@@ -111,6 +139,15 @@ function getKoreanNowParts() {
     time: `${parts.hour}:${parts.minute}`
   };
 }
+
+window.handoffAppApi = {
+  ensurePatientStoreLoaded,
+  getPatientStore,
+  getPatientData,
+  syncDateList,
+  isUsingExternalData,
+  getKoreanNowParts
+};
 
 // 초기화
 document.addEventListener('DOMContentLoaded', function () {
@@ -1221,6 +1258,1390 @@ updateDashboard = async function (pid) {
   const aiPtDiv = document.getElementById('aiPanelPatient');
   if (aiPtDiv) aiPtDiv.textContent = `${p.name} (${p.age}/${p.gender}) - ${p.diagnosis}`;
 };
+
+if (window.handoffAppApi) {
+  window.handoffAppApi.buildNormalizedDailyTimeline = buildNormalizedDailyTimeline;
+  window.handoffAppApi.buildLongitudinalPatientSummary = buildLongitudinalPatientSummary;
+  window.handoffAppApi.buildHandoffAnalysis = buildHandoffAnalysis;
+  window.handoffAppApi.generateNarrativeSBAR = generateNarrativeSBAR;
+}
+
+function generateNarrativeSBAR(p, startData, endData, dates) {
+  const analysis = buildHandoffAnalysis(p, dates);
+  const historyList = (endData.pastHistory || []).join(", ");
+  const historyHTML = historyList ? `<div style="margin-bottom:4px; color:#424242; font-size:11px;"><b>?뱦 以묒슂 怨쇨굅??</b> ${historyList}</div>` : '';
+  const situationItems = analysis.sbarPayload.situation.length
+    ? renderHandoffBulletList(analysis.sbarPayload.situation)
+    : `<div style="color:#666;">중대한 상태변화는 확인되지 않았습니다.</div>`;
+  const backgroundCards = analysis.sbarPayload.background.length
+    ? analysis.sbarPayload.background.map((item) => renderBackgroundCard(item)).join('')
+    : `<div style="padding:5px; color:#666;">선택 기간 동안 인계 우선순위 변화가 크지 않습니다.</div>`;
+  const assessmentItems = analysis.sbarPayload.assessment.length
+    ? renderAssessmentList(analysis.sbarPayload.assessment)
+    : `<div style="color:#666;">즉시 우선순위로 분류된 문제는 없습니다.</div>`;
+  const recommendationItems = analysis.sbarPayload.recommendation.length
+    ? renderHandoffBulletList(analysis.sbarPayload.recommendation)
+    : `<div style="color:#666;">현재 계획 유지 및 routine monitoring 권장.</div>`;
+
+  const assessmentHTML = `
+    ${assessmentItems}
+    <div style="display:flex; flex-direction:column; gap:10px; margin-top:12px;">
+      <button class="sbar-link-btn" onclick="openLabModal('${p.id}', 'Hematology')">
+        ?㈇ <b>[吏꾨떒寃??</b> ?꾩쟻 寃?ш껐怨?蹂닿린 (Click)
+      </button>
+      <button class="sbar-link-btn" onclick="alert('PACS Viewer: ${endData.specials && endData.specials.length > 0 ? endData.specials[0] : '理쒓렐 ?곸긽 ?놁쓬'}')">
+        ??툘 <b>[?곸긽寃??]</b> ${endData.specials && endData.specials.length > 0 ? endData.specials.join(', ') : '?뱀씠 ?곸긽 ?뚭껄 ?놁쓬'}
+      </button>
+      <button class="sbar-link-btn" onclick="alert('?묒쭊: ${endData.consults ? endData.consults : '?놁쓬'}')">
+        ?뫅?띯슃截?<b>[?묒쭊?댁뿭]</b> ${endData.consults ? endData.consults : '?怨??묒쭊 ?놁쓬'}
+      </button>
+    </div>
+  `;
+
+  return `
+    <div class="sbar-section">
+      <div class="sbar-header situation">?뱧 S - Situation</div>
+      <div class="sbar-body">
+        <div style="margin-bottom:4px;"><b>?섏옄?좏삎:</b> ${endData.nursingProblem || '-'}</div>
+        <div style="margin-bottom:4px;"><b>?낆썝?숆린:</b> ${p.admissionNote || p.admitReason}</div>
+        ${historyHTML}
+        <div style="margin-bottom:8px;"><b>?꾩옱?쒕젰:</b> BP ${endData.vital.bp}, HR ${endData.vital.hr}, BT ${endData.vital.bt}, SpO2 ${endData.vital.spo2}%</div>
+        ${situationItems}
+      </div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-header background">?뱥 B - Background</div>
+      <div class="sbar-body">${backgroundCards}</div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-header assessment">?뵇 A - Assessment</div>
+      <div class="sbar-body">${assessmentHTML}</div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-header recommendation">??R - Recommendation</div>
+      <div class="sbar-body">
+        ${recommendationItems}
+        ${renderRoutineOrderLink(endData, dates)}
+      </div>
+    </div>
+  `;
+}
+
+const LONGITUDINAL_SUMMARY_POLICY = {
+  categoryBaseScores: {
+    identity: 10,
+    care_frame: 9,
+    persistent_problem: 10,
+    watch_item: 8,
+    carryover: 9
+  },
+  thresholds: {
+    core: 26,
+    focus: 18,
+    supporting: 10
+  },
+  maxItemsPerSection: {
+    identity: 3,
+    careFrame: 5,
+    persistentConcerns: 4,
+    watchItems: 4,
+    carryoverItems: 4
+  },
+  highRiskMedicationKeywords: [
+    /insulin/i,
+    /heparin/i,
+    /warfarin/i,
+    /enoxaparin/i,
+    /morphine/i,
+    /fentanyl/i,
+    /hydromorphone/i,
+    /potassium|kcl/i,
+    /norepinephrine|epinephrine|vasopressin|dobutamine/i,
+    /cisplatin|doxorubicin|cyclophosphamide|chemo/i
+  ]
+};
+
+function buildNormalizedDailyTimeline(patient, dates) {
+  return (dates || [])
+    .map((date) => normalizeDailySnapshot(patient, date, patient.dailyData?.[date]))
+    .filter(Boolean);
+}
+
+function buildHandoffAnalysis(patient, dates) {
+  const normalizedDailyTimeline = buildNormalizedDailyTimeline(patient, dates);
+  const longitudinalSummary = buildLongitudinalPatientSummary(patient, normalizedDailyTimeline);
+  const baseline = normalizedDailyTimeline[0] || null;
+  const current = normalizedDailyTimeline[normalizedDailyTimeline.length - 1] || null;
+  const previous = normalizedDailyTimeline.length > 1 ? normalizedDailyTimeline[normalizedDailyTimeline.length - 2] : null;
+  const currentChanges = detectHandoffChanges(previous, current, baseline);
+  const timelineEvents = [];
+
+  normalizedDailyTimeline.forEach((snapshot, index) => {
+    if (index === 0) return;
+    timelineEvents.push(...detectHandoffChanges(normalizedDailyTimeline[index - 1], snapshot, baseline));
+  });
+
+  const prioritizedHandoffItems = scoreHandoffEvents(currentChanges, { current, previous });
+  return {
+    normalizedDailyTimeline,
+    longitudinalSummary,
+    changeEvents: currentChanges,
+    prioritizedHandoffItems,
+    sbarPayload: buildSbarPayload(patient, {
+      current,
+      prioritizedHandoffItems,
+      timelineEvents: scoreHandoffEvents(timelineEvents, { current, previous })
+    })
+  };
+}
+
+function normalizeDailySnapshot(patient, date, data) {
+  if (!data) return null;
+  const meta = data.handoffMeta || {};
+  const flatLabs = flattenLabMap(data.labs || {});
+  const abnormalLabs = normalizeAbnormalLabEntries(meta.labs?.abnormal, flatLabs);
+  const vital = data.vital || { bp: "120/80", hr: 80, bt: 36.8, rr: 18, spo2: 98 };
+  const bpParts = String(vital.bp || "120/80").split('/');
+  const abnormalFlags = meta.vitals?.abnormalFlags || detectVitalAbnormalFlags(vital);
+  const completedActions = unique(meta.nursingActions?.completed || (data.nursingTasks || []).map((task) => typeof task === 'string' ? task : task.text));
+  const followUpActions = unique(meta.nursingActions?.followUp || meta.nursingActions?.pending || (data.plan || []));
+  const pendingActions = filterCarryoverActionItems(meta.nursingActions?.pending || followUpActions);
+  const backgroundFollowUp = followUpActions.filter((item) => !pendingActions.includes(item));
+  const lineItems = filterClinicalStatusItems('lines', meta.clinicalStatus?.lines || toItemText(data.handover?.lines || []));
+  const tubeItems = filterClinicalStatusItems('tubes', meta.clinicalStatus?.tubes || toItemText(data.handover?.tubes || []));
+  const drainItems = filterClinicalStatusItems('drains', meta.clinicalStatus?.drains || toItemText(data.handover?.drains || []));
+  const ventItems = filterClinicalStatusItems('vent', meta.clinicalStatus?.vent || toItemText(data.handover?.vent || []));
+  const activeOrders = meta.orders?.active || unique([...(data.docOrders?.routine || []), ...(data.docOrders?.prn || [])]);
+  const medicationOrders = meta.orders?.medications || {
+    inj: toItemText(data.orders?.inj || []),
+    po: toItemText(data.orders?.po || []),
+    running: []
+  };
+  const patientHistory = unique([...(data.pastHistory || []), ...(patient.pastHistory || [])]);
+  const activeDevices = unique([...lineItems, ...tubeItems, ...drainItems]);
+  const activityValue = normalizeActivityValue(meta.clinicalStatus?.activity || data.activity || "-");
+  const nursingProblem = extractCoreNursingProblem(
+    data.nursingProblem,
+    meta.clinicalStatus?.diagnoses || [patient.diagnosis].filter(Boolean)
+  );
+
+  return {
+    date,
+    patientContext: {
+      id: patient.id,
+      name: patient.name || "-",
+      gender: patient.gender || "-",
+      age: patient.age || "-",
+      room: patient.room || "-",
+      diagnosis: normalizeClinicalPlaceholderText(patient.diagnosis),
+      admissionReason: normalizeNarrativeText(patient.admissionNote || patient.admitReason || "-"),
+      pastHistory: patientHistory
+    },
+    nursingProblem,
+    clinicalStatus: {
+      diagnoses: normalizeDiagnosisItems(meta.clinicalStatus?.diagnoses || [patient.diagnosis]),
+      isolation: meta.clinicalStatus?.isolation || patient.isolation || "-",
+      activity: activityValue,
+      caution: meta.clinicalStatus?.caution || [],
+      lines: lineItems,
+      tubes: tubeItems,
+      drains: drainItems,
+      vent: ventItems,
+      activeDevices,
+      respiratorySupport: ventItems
+    },
+    orders: {
+      active: activeOrders,
+      routine: meta.orders?.routine || (data.docOrders?.routine || []),
+      prn: meta.orders?.prn || (data.docOrders?.prn || []),
+      medications: medicationOrders,
+      counts: {
+        active: activeOrders.length,
+        routine: (meta.orders?.routine || data.docOrders?.routine || []).length,
+        prn: (meta.orders?.prn || data.docOrders?.prn || []).length
+      }
+    },
+    vitals: {
+      latest: {
+        bp: vital.bp || "120/80",
+        systolic: Number(bpParts[0]) || 120,
+        diastolic: Number(bpParts[1]) || 80,
+        hr: Number(vital.hr) || 80,
+        bt: Number(vital.bt) || 36.8,
+        rr: Number(vital.rr) || 18,
+        spo2: Number(vital.spo2) || 98
+      },
+      abnormalFlags,
+      severityScore: abnormalFlags.length * 2,
+      summaryText: buildVitalSummaryText(vital)
+    },
+    labs: {
+      latest: meta.labs?.latest || flatLabs,
+      abnormal: abnormalLabs,
+      abnormalKeys: abnormalLabs.map((item) => item.key),
+      severityScore: abnormalLabs.length,
+      summaryText: buildLabSummaryText(abnormalLabs, flatLabs)
+    },
+    nursingActions: {
+      completed: completedActions,
+      pending: pendingActions,
+      followUp: followUpActions,
+      backgroundFollowUp,
+      needsRecheck: pendingActions.slice(0, 4),
+      completedCount: completedActions.length,
+      pendingCount: pendingActions.length,
+      followUpCount: followUpActions.length
+    },
+    carryover: {
+      items: pendingActions,
+      backgroundItems: backgroundFollowUp,
+      hasCarryover: pendingActions.length > 0,
+      pendingCount: pendingActions.length
+    },
+    summarySignals: {
+      activeDevices,
+      activeRisks: unique([
+        ...(meta.clinicalStatus?.caution || []),
+        ...abnormalFlags.map(vitalFlagLabel),
+        ...abnormalLabs.slice(0, 3).map((item) => `${item.key} ${formatLabValue(String(item.value))}`)
+      ])
+    },
+    sourceRefs: meta.sourceRefs || {}
+  };
+}
+
+function buildLongitudinalPatientSummary(patient, normalizedDailyTimeline, policy = LONGITUDINAL_SUMMARY_POLICY) {
+  const timeline = normalizedDailyTimeline || [];
+  if (!timeline.length) {
+    return {
+      dateRange: null,
+      sections: {
+        identity: [],
+        careFrame: [],
+        persistentConcerns: [],
+        watchItems: [],
+        carryoverItems: []
+      },
+      scoredItems: [],
+      topItems: [],
+      conciseSummary: '요약 가능한 환자 데이터가 없습니다.',
+      scorePolicy: policy.thresholds
+    };
+  }
+
+  const scoredItems = uniqueBy(
+    collectLongitudinalSummaryCandidates(patient, timeline, policy)
+      .map((item) => scoreLongitudinalSummaryCandidate(item, policy)),
+    (item) => item.id
+  ).sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return (b.sourceDates?.length || 0) - (a.sourceDates?.length || 0);
+  });
+
+  const sections = {
+    identity: selectLongitudinalSummaryItems(scoredItems, 'identity', policy.maxItemsPerSection.identity, policy.thresholds.supporting),
+    careFrame: selectLongitudinalSummaryItems(scoredItems, 'care_frame', policy.maxItemsPerSection.careFrame, policy.thresholds.supporting),
+    persistentConcerns: selectLongitudinalSummaryItems(scoredItems, 'persistent_problem', policy.maxItemsPerSection.persistentConcerns, policy.thresholds.supporting),
+    watchItems: selectLongitudinalSummaryItems(scoredItems, 'watch_item', policy.maxItemsPerSection.watchItems, policy.thresholds.supporting),
+    carryoverItems: selectLongitudinalSummaryItems(scoredItems, 'carryover', policy.maxItemsPerSection.carryoverItems, policy.thresholds.supporting)
+  };
+
+  return {
+    patientId: patient.id,
+    dateRange: {
+      start: timeline[0].date,
+      end: timeline[timeline.length - 1].date
+    },
+    currentDate: timeline[timeline.length - 1].date,
+    sections,
+    scoredItems,
+    topItems: scoredItems.filter((item) => item.score >= policy.thresholds.focus).slice(0, 10),
+    conciseSummary: buildLongitudinalSummaryNarrative(patient, sections),
+    overview: {
+      identity: sections.identity.map((item) => item.summary),
+      careFrame: sections.careFrame.map((item) => item.summary),
+      persistentConcerns: sections.persistentConcerns.map((item) => item.summary),
+      watchItems: sections.watchItems.map((item) => item.summary),
+      carryoverItems: sections.carryoverItems.map((item) => item.summary)
+    },
+    scorePolicy: policy.thresholds,
+    debug: {
+      candidateCount: scoredItems.length,
+      sectionCounts: {
+        identity: sections.identity.length,
+        careFrame: sections.careFrame.length,
+        persistentConcerns: sections.persistentConcerns.length,
+        watchItems: sections.watchItems.length,
+        carryoverItems: sections.carryoverItems.length
+      }
+    }
+  };
+}
+
+function collectLongitudinalSummaryCandidates(patient, timeline, policy) {
+  return uniqueBy([
+    ...buildPatientIdentitySummaryCandidates(patient, timeline),
+    ...buildCareFrameSummaryCandidates(timeline),
+    ...buildPersistentConcernCandidates(timeline),
+    ...buildWatchSummaryCandidates(timeline, policy),
+    ...buildCarryoverSummaryCandidates(timeline)
+  ], (item) => item.id);
+}
+
+function buildPatientIdentitySummaryCandidates(patient, timeline) {
+  const current = timeline[timeline.length - 1];
+  const candidates = [];
+  const diagnosisList = unique(current.clinicalStatus?.diagnoses || [patient.diagnosis].filter(Boolean));
+  const diagnosisDates = findTimelineDates(timeline, (snapshot) => overlaps(snapshot.clinicalStatus?.diagnoses || [], diagnosisList));
+
+  if (diagnosisList.length) {
+    const diagnosisTemporal = deriveTemporalScores(diagnosisDates.length || timeline.length);
+    candidates.push(createLongitudinalSummaryCandidate({
+      id: `identity:diagnosis:${diagnosisList.join('|')}`,
+      category: 'identity',
+      summary: `환자 정체성: ${diagnosisList.slice(0, 3).join(', ')}`,
+      detail: current.nursingProblem && current.nursingProblem !== diagnosisList.join(', ')
+        ? `현재 간호 초점: ${current.nursingProblem}`
+        : '현재 치료 및 간호의 중심이 되는 진단입니다.',
+      evidence: diagnosisList.map((item) => `diagnosis:${item}`),
+      sourceDates: diagnosisDates.length ? diagnosisDates : timeline.map((snapshot) => snapshot.date),
+      scoreInput: {
+        persistence: diagnosisTemporal.persistence,
+        actionability: 2,
+        safety: clampScore(estimateRiskKeywordScore(current.nursingProblem || diagnosisList.join(' ')), 1, 6),
+        nursingDependency: 1,
+        recurrence: diagnosisTemporal.recurrence
+      }
+    }));
+  }
+
+  const admissionReason = pickFirstNonEmpty(current.patientContext?.admissionReason, patient.admissionNote, patient.admitReason);
+  if (admissionReason) {
+    candidates.push(createLongitudinalSummaryCandidate({
+      id: `identity:admission:${admissionReason}`,
+      category: 'identity',
+      summary: `입원 배경: ${truncateText(admissionReason, 72)}`,
+      detail: '입원 이유와 치료 시작 맥락을 설명하는 핵심 배경입니다.',
+      evidence: ['admission_reason'],
+      sourceDates: timeline.map((snapshot) => snapshot.date),
+      scoreInput: {
+        persistence: 3,
+        actionability: 1,
+        safety: 1,
+        nursingDependency: 1,
+        recurrence: 1
+      }
+    }));
+  }
+
+  const historyItems = unique(timeline.flatMap((snapshot) => snapshot.patientContext?.pastHistory || [])).slice(0, 4);
+  if (historyItems.length) {
+    candidates.push(createLongitudinalSummaryCandidate({
+      id: `identity:history:${historyItems.join('|')}`,
+      category: 'identity',
+      summary: `중요 과거력: ${historyItems.join(', ')}`,
+      detail: '장기 경과와 간호 시 주의가 필요한 과거력입니다.',
+      evidence: historyItems.map((item) => `history:${item}`),
+      sourceDates: findTimelineDates(timeline, (snapshot) => (snapshot.patientContext?.pastHistory || []).length > 0),
+      scoreInput: {
+        persistence: 2,
+        actionability: 1,
+        safety: clampScore(estimateRiskKeywordScore(historyItems.join(' ')), 1, 5),
+        nursingDependency: 1,
+        recurrence: 1
+      }
+    }));
+  }
+
+  return candidates;
+}
+
+function buildCareFrameSummaryCandidates(timeline) {
+  const current = timeline[timeline.length - 1];
+  const candidates = [];
+
+  if (current.clinicalStatus?.isolation && current.clinicalStatus.isolation !== '-') {
+    const sourceDates = findTimelineDates(timeline, (snapshot) => (snapshot.clinicalStatus?.isolation || '-') !== '-');
+    const temporal = deriveTemporalScores(sourceDates.length);
+    candidates.push(createLongitudinalSummaryCandidate({
+      id: `care:isolation:${current.clinicalStatus.isolation}`,
+      category: 'care_frame',
+      summary: `격리/주의: ${current.clinicalStatus.isolation}`,
+      detail: '현재 감염관리 또는 주의사항 틀을 바꾸는 관리 조건입니다.',
+      evidence: [`isolation:${current.clinicalStatus.isolation}`],
+      sourceDates,
+      scoreInput: {
+        persistence: temporal.persistence,
+        actionability: 4,
+        safety: 4,
+        nursingDependency: 3,
+        recurrence: temporal.recurrence
+      }
+    }));
+  }
+
+  if (current.clinicalStatus?.activity && current.clinicalStatus.activity !== '-') {
+    const sourceDates = findTimelineDates(timeline, (snapshot) => (snapshot.clinicalStatus?.activity || '-') !== '-');
+    const temporal = deriveTemporalScores(sourceDates.length);
+    candidates.push(createLongitudinalSummaryCandidate({
+      id: `care:activity:${current.clinicalStatus.activity}`,
+      category: 'care_frame',
+      summary: `활동 수준: ${current.clinicalStatus.activity}`,
+      detail: '현재 이동, 체위, 낙상예방 등 간호계획의 기본 틀입니다.',
+      evidence: [`activity:${current.clinicalStatus.activity}`],
+      sourceDates,
+      scoreInput: {
+        persistence: temporal.persistence,
+        actionability: 4,
+        safety: 2,
+        nursingDependency: 3,
+        recurrence: temporal.recurrence
+      }
+    }));
+  }
+
+  buildDeviceSummaryCandidate(timeline, 'vent', '호흡 보조/산소', 5, 5, 3).forEach((item) => candidates.push(item));
+  buildDeviceSummaryCandidate(timeline, 'lines', '유지 중인 line', 4, 3, 3).forEach((item) => candidates.push(item));
+  buildDeviceSummaryCandidate(timeline, 'tubes', '유지 중인 tube', 4, 3, 3).forEach((item) => candidates.push(item));
+  buildDeviceSummaryCandidate(timeline, 'drains', '유지 중인 drain', 4, 3, 3).forEach((item) => candidates.push(item));
+
+  if ((current.clinicalStatus?.caution || []).length) {
+    const cautionItems = unique(current.clinicalStatus.caution).slice(0, 4);
+    const sourceDates = findTimelineDates(timeline, (snapshot) => (snapshot.clinicalStatus?.caution || []).length > 0);
+    const temporal = deriveTemporalScores(sourceDates.length);
+    candidates.push(createLongitudinalSummaryCandidate({
+      id: `care:caution:${cautionItems.join('|')}`,
+      category: 'care_frame',
+      summary: `주의사항: ${cautionItems.join(', ')}`,
+      detail: '반복 확인이 필요한 주의사항 또는 위험 요인입니다.',
+      evidence: cautionItems.map((item) => `caution:${item}`),
+      sourceDates,
+      scoreInput: {
+        persistence: temporal.persistence,
+        actionability: 3,
+        safety: clampScore(estimateRiskKeywordScore(cautionItems.join(' ')), 2, 6),
+        nursingDependency: 2,
+        recurrence: temporal.recurrence
+      }
+    }));
+  }
+
+  return candidates;
+}
+
+function buildPersistentConcernCandidates(timeline) {
+  const current = timeline[timeline.length - 1];
+  const candidates = [];
+  const nursingProblemDates = findTimelineDates(timeline, (snapshot) => snapshot.nursingProblem && snapshot.nursingProblem !== '-');
+
+  if (current.nursingProblem && current.nursingProblem !== '-') {
+    const temporal = deriveTemporalScores(nursingProblemDates.length);
+    candidates.push(createLongitudinalSummaryCandidate({
+      id: `persistent:nursing_problem:${current.nursingProblem}`,
+      category: 'persistent_problem',
+      summary: `지속 핵심 문제: ${current.nursingProblem}`,
+      detail: `${nursingProblemDates.length || 1}일 범위에서 반복되거나 계속 추적 중인 임상·간호 문제입니다.`,
+      evidence: [`nursing_problem:${current.nursingProblem}`],
+      sourceDates: nursingProblemDates.length ? nursingProblemDates : [current.date],
+      scoreInput: {
+        persistence: temporal.persistence,
+        actionability: 5,
+        safety: clampScore(estimateRiskKeywordScore(current.nursingProblem), 2, 6),
+        nursingDependency: 3,
+        recurrence: temporal.recurrence
+      }
+    }));
+  }
+
+  const vitalFlagCounts = {};
+  timeline.forEach((snapshot) => unique(snapshot.vitals?.abnormalFlags || []).forEach((flag) => {
+    vitalFlagCounts[flag] = (vitalFlagCounts[flag] || 0) + 1;
+  }));
+  const currentVitalFlags = current.vitals?.abnormalFlags || [];
+  const persistentVitalFlags = unique([
+    ...currentVitalFlags,
+    ...Object.keys(vitalFlagCounts).filter((flag) => vitalFlagCounts[flag] >= 2)
+  ]);
+
+  if (persistentVitalFlags.length) {
+    const sourceDates = findTimelineDates(timeline, (snapshot) => (snapshot.vitals?.abnormalFlags || []).some((flag) => persistentVitalFlags.includes(flag)));
+    const temporal = deriveTemporalScores(sourceDates.length);
+    candidates.push(createLongitudinalSummaryCandidate({
+      id: `persistent:vitals:${persistentVitalFlags.join('|')}`,
+      category: 'persistent_problem',
+      summary: `반복 활력 이상 경향: ${persistentVitalFlags.map(vitalFlagLabel).join(', ')}`,
+      detail: `${sourceDates.length}일 범위에서 반복되거나 현재도 이어지는 활력징후 이상입니다.`,
+      evidence: persistentVitalFlags.map((flag) => `vital:${flag}`),
+      sourceDates,
+      scoreInput: {
+        persistence: temporal.persistence,
+        actionability: 4,
+        safety: 5,
+        nursingDependency: 3,
+        recurrence: temporal.recurrence
+      }
+    }));
+  }
+
+  const labCounts = {};
+  timeline.forEach((snapshot) => (snapshot.labs?.abnormal || []).forEach((item) => {
+    labCounts[item.key] = (labCounts[item.key] || 0) + 1;
+  }));
+  const currentAbnormalKeys = (current.labs?.abnormal || []).map((item) => item.key);
+  const persistentLabKeys = unique(
+    Object.keys(labCounts).filter((key) => {
+      const currentStatus = getLabStatus(key, String(current.labs?.latest?.[key] ?? '-')).status;
+      return currentStatus !== 'normal' && (currentAbnormalKeys.includes(key) || labCounts[key] >= 2);
+    })
+  ).slice(0, 4);
+
+  if (persistentLabKeys.length) {
+    const sourceDates = findTimelineDates(timeline, (snapshot) => (snapshot.labs?.abnormal || []).some((item) => persistentLabKeys.includes(item.key)));
+    const temporal = deriveTemporalScores(sourceDates.length);
+    const currentValues = persistentLabKeys.map((key) => `${key} ${formatLabValue(String(current.labs?.latest?.[key] ?? '-'))}`);
+    candidates.push(createLongitudinalSummaryCandidate({
+      id: `persistent:labs:${persistentLabKeys.join('|')}`,
+      category: 'persistent_problem',
+      summary: `지속 검사 이상: ${currentValues.join(', ')}`,
+      detail: `${sourceDates.length}일 이상 반복되거나 현재도 남아 있는 검사 이상 소견입니다.`,
+      evidence: persistentLabKeys.map((key) => `lab:${key}`),
+      sourceDates,
+      scoreInput: {
+        persistence: temporal.persistence,
+        actionability: 4,
+        safety: estimateLabRiskScore(persistentLabKeys),
+        nursingDependency: 2,
+        recurrence: temporal.recurrence
+      }
+    }));
+  }
+
+  return candidates;
+}
+
+function buildWatchSummaryCandidates(timeline, policy) {
+  const current = timeline[timeline.length - 1];
+  const candidates = [];
+  const currentVitalFlags = current.vitals?.abnormalFlags || [];
+
+  if (currentVitalFlags.length) {
+    const sourceDates = findTimelineDates(timeline, (snapshot) => (snapshot.vitals?.abnormalFlags || []).some((flag) => currentVitalFlags.includes(flag)));
+    const temporal = deriveTemporalScores(sourceDates.length);
+    candidates.push(createLongitudinalSummaryCandidate({
+      id: `watch:current_vitals:${currentVitalFlags.join('|')}`,
+      category: 'watch_item',
+      summary: `현재 주의 활력징후: ${currentVitalFlags.map(vitalFlagLabel).join(', ')}`,
+      detail: `${current.date} 기준 활력징후 이상으로 현재도 관찰이 필요한 항목입니다.`,
+      evidence: currentVitalFlags.map((flag) => `vital:${flag}`),
+      sourceDates: [current.date],
+      scoreInput: {
+        persistence: temporal.persistence,
+        actionability: 5,
+        safety: 6,
+        nursingDependency: 3,
+        recurrence: temporal.recurrence
+      }
+    }));
+  }
+
+  if ((current.labs?.abnormal || []).length) {
+    const topLabs = current.labs.abnormal.slice(0, 4);
+    const sourceDates = findTimelineDates(timeline, (snapshot) => (snapshot.labs?.abnormal || []).some((item) => topLabs.some((lab) => lab.key === item.key)));
+    const temporal = deriveTemporalScores(sourceDates.length);
+    candidates.push(createLongitudinalSummaryCandidate({
+      id: `watch:current_labs:${topLabs.map((item) => item.key).join('|')}`,
+      category: 'watch_item',
+      summary: `현재 주의 검사: ${topLabs.map((item) => `${item.key} ${formatLabValue(String(item.value))}`).join(', ')}`,
+      detail: `${current.date} 기준 현재도 확인이 필요한 비정상 검사입니다.`,
+      evidence: topLabs.map((item) => `lab:${item.key}`),
+      sourceDates: [current.date],
+      scoreInput: {
+        persistence: temporal.persistence,
+        actionability: 4,
+        safety: estimateLabRiskScore(topLabs.map((item) => item.key)),
+        nursingDependency: 2,
+        recurrence: temporal.recurrence
+      }
+    }));
+  }
+
+  const highRiskOrders = unique([
+    ...(current.orders?.active || []),
+    ...(current.orders?.medications?.inj || []),
+    ...(current.orders?.medications?.po || []),
+    ...(current.orders?.medications?.running || [])
+  ]).filter((item) => isHighRiskMedication(item, policy)).slice(0, 4);
+
+  if (highRiskOrders.length) {
+    const sourceDates = findTimelineDates(timeline, (snapshot) => unique([
+      ...(snapshot.orders?.active || []),
+      ...(snapshot.orders?.medications?.inj || []),
+      ...(snapshot.orders?.medications?.po || []),
+      ...(snapshot.orders?.medications?.running || [])
+    ]).some((item) => highRiskOrders.includes(item)));
+    const temporal = deriveTemporalScores(sourceDates.length);
+    candidates.push(createLongitudinalSummaryCandidate({
+      id: `watch:high_risk_order:${highRiskOrders.join('|')}`,
+      category: 'watch_item',
+      summary: `고위험 약물/처치 맥락: ${highRiskOrders.join(', ')}`,
+      detail: '다음 근무조가 약물 또는 처치 위험도를 염두에 두고 인계받아야 하는 항목입니다.',
+      evidence: highRiskOrders.map((item) => `order:${item}`),
+      sourceDates,
+      scoreInput: {
+        persistence: temporal.persistence,
+        actionability: 4,
+        safety: 4,
+        nursingDependency: 3,
+        recurrence: temporal.recurrence
+      }
+    }));
+  }
+
+  return candidates;
+}
+
+function buildCarryoverSummaryCandidates(timeline) {
+  const current = timeline[timeline.length - 1];
+  const pendingItems = current.carryover?.items || current.nursingActions?.pending || [];
+  return pendingItems.slice(0, 6).map((item) => {
+    const sourceDates = findTimelineDates(timeline, (snapshot) => (snapshot.nursingActions?.pending || []).includes(item));
+    const temporal = deriveTemporalScores(sourceDates.length);
+    return createLongitudinalSummaryCandidate({
+      id: `carryover:${item}`,
+      category: 'carryover',
+      summary: `지속 인계 필요: ${item}`,
+      detail: sourceDates.length > 1
+        ? `${sourceDates.length}일 이상 이어진 미완료 또는 후속 확인 항목입니다.`
+        : '다음 근무조가 이어받아 확인해야 하는 항목입니다.',
+      evidence: [`pending:${item}`],
+      sourceDates: sourceDates.length ? sourceDates : [current.date],
+      scoreInput: {
+        persistence: temporal.persistence,
+        actionability: 6,
+        safety: clampScore(estimateRiskKeywordScore(item), 1, 6),
+        nursingDependency: 4,
+        recurrence: temporal.recurrence
+      }
+    });
+  });
+}
+
+function buildDeviceSummaryCandidate(timeline, key, label, actionability, safety, nursingDependency) {
+  const current = timeline[timeline.length - 1];
+  const currentItems = (current.clinicalStatus?.[key] || []).filter((item) => isMeaningfulDeviceItem(key, item));
+  if (!currentItems.length) return [];
+  const sourceDates = findTimelineDates(timeline, (snapshot) => (snapshot.clinicalStatus?.[key] || []).some((item) => isMeaningfulDeviceItem(key, item)));
+  const temporal = deriveTemporalScores(sourceDates.length);
+  return [
+    createLongitudinalSummaryCandidate({
+      id: `care:${key}:${currentItems.join('|')}`,
+      category: 'care_frame',
+      summary: `${label}: ${currentItems.slice(0, 4).join(', ')}`,
+      detail: `현재 ${label} 관리가 유지 중입니다.`,
+      evidence: currentItems.map((item) => `${label}:${item}`),
+      sourceDates,
+      scoreInput: {
+        persistence: temporal.persistence,
+        actionability,
+        safety,
+        nursingDependency,
+        recurrence: temporal.recurrence
+      }
+    })
+  ];
+}
+
+function createLongitudinalSummaryCandidate(input) {
+  const evidence = unique((input.evidence || []).filter(Boolean));
+  return {
+    id: input.id || `${input.category}:${input.summary}`,
+    category: input.category,
+    summary: input.summary,
+    detail: input.detail || '',
+    evidence: evidence.length ? evidence : ['evidence 부족'],
+    sourceDates: unique(input.sourceDates || []),
+    scoreInput: {
+      categoryBase: input.scoreInput?.categoryBase,
+      persistence: input.scoreInput?.persistence || 0,
+      actionability: input.scoreInput?.actionability || 0,
+      safety: input.scoreInput?.safety || 0,
+      nursingDependency: input.scoreInput?.nursingDependency || 0,
+      recurrence: input.scoreInput?.recurrence || 0,
+      resolvedPenalty: input.scoreInput?.resolvedPenalty || 0
+    }
+  };
+}
+
+function scoreLongitudinalSummaryCandidate(candidate, policy) {
+  const breakdown = {
+    categoryBase: typeof candidate.scoreInput.categoryBase === 'number'
+      ? candidate.scoreInput.categoryBase
+      : (policy.categoryBaseScores[candidate.category] || 0),
+    persistence: clampScore(candidate.scoreInput.persistence, 0, 6),
+    actionability: clampScore(candidate.scoreInput.actionability, 0, 6),
+    safety: clampScore(candidate.scoreInput.safety, 0, 6),
+    nursingDependency: clampScore(candidate.scoreInput.nursingDependency, 0, 4),
+    recurrence: clampScore(candidate.scoreInput.recurrence, 0, 3),
+    resolvedPenalty: -clampScore(candidate.scoreInput.resolvedPenalty, 0, 6)
+  };
+  const score = Object.values(breakdown).reduce((total, value) => total + value, 0);
+
+  return {
+    ...candidate,
+    score,
+    scoreBreakdown: breakdown,
+    importanceBand: score >= policy.thresholds.core
+      ? 'core'
+      : score >= policy.thresholds.focus
+        ? 'focus'
+        : score >= policy.thresholds.supporting
+          ? 'supporting'
+          : 'background',
+    reasoning: buildSummaryReasoning(breakdown)
+  };
+}
+
+function selectLongitudinalSummaryItems(items, category, maxItems, minimumScore) {
+  const candidates = (items || []).filter((item) => item.category === category && item.score >= minimumScore);
+  const fallback = candidates.length ? candidates : (items || []).filter((item) => item.category === category);
+  return fallback.slice(0, maxItems);
+}
+
+function buildLongitudinalSummaryNarrative(patient, sections) {
+  const lines = [];
+  if (sections.identity[0]?.summary) lines.push(sections.identity[0].summary);
+  if (sections.careFrame.length) lines.push(`현재 관리 틀: ${sections.careFrame.slice(0, 2).map((item) => item.summary).join(' / ')}`);
+  if (sections.persistentConcerns.length) lines.push(`지속 문제: ${sections.persistentConcerns.slice(0, 2).map((item) => item.summary).join(' / ')}`);
+  if (sections.watchItems.length) lines.push(`집중 관찰: ${sections.watchItems.slice(0, 2).map((item) => item.summary).join(' / ')}`);
+  if (sections.carryoverItems.length) lines.push(`지속 인계: ${sections.carryoverItems.slice(0, 2).map((item) => item.summary).join(' / ')}`);
+  return lines.length ? lines.join(' | ') : `${patient.name || '환자'} 요약 정보가 부족합니다.`;
+}
+
+function buildSummaryReasoning(breakdown) {
+  return Object.entries(breakdown)
+    .filter(([, value]) => value !== 0)
+    .map(([key, value]) => `${key} ${value > 0 ? '+' : ''}${value}`);
+}
+
+function buildVitalSummaryText(vital) {
+  return `BP ${vital?.bp || '-'}, HR ${vital?.hr ?? '-'}, BT ${vital?.bt ?? '-'}, RR ${vital?.rr ?? '-'}, SpO2 ${vital?.spo2 ?? '-'}%`;
+}
+
+function buildLabSummaryText(abnormalLabs, flatLabs) {
+  if (abnormalLabs.length) {
+    return abnormalLabs.slice(0, 4).map((item) => `${item.key} ${formatLabValue(String(item.value))}`).join(', ');
+  }
+  const labKeys = Object.keys(flatLabs || {}).slice(0, 4);
+  return labKeys.length ? labKeys.map((key) => `${key} ${formatLabValue(String(flatLabs[key]))}`).join(', ') : '주요 이상 검사 없음';
+}
+
+function normalizeAbnormalLabEntries(metaItems, flatLabs) {
+  if (!Array.isArray(metaItems) || !metaItems.length) {
+    return buildAbnormalLabList(flatLabs);
+  }
+
+  return metaItems
+    .map((item) => {
+      const value = typeof item?.value !== 'undefined' ? item.value : flatLabs?.[item?.key];
+      const status = getLabStatus(item?.key, String(value ?? '-')).status;
+      return {
+        key: item?.key,
+        value,
+        status
+      };
+    })
+    .filter((item) => item.key && item.status !== 'normal' && typeof item.value !== 'undefined' && item.value !== '-');
+}
+
+function deriveTemporalScores(dayCount) {
+  const safeDayCount = Math.max(0, Number(dayCount) || 0);
+  return {
+    persistence: clampScore((safeDayCount - 1) * 2, 0, 6),
+    recurrence: clampScore(safeDayCount - 1, 0, 3)
+  };
+}
+
+function clampScore(value, min, max) {
+  return Math.max(min, Math.min(max, Number(value) || 0));
+}
+
+function findTimelineDates(timeline, predicate) {
+  return (timeline || []).filter((snapshot) => predicate(snapshot)).map((snapshot) => snapshot.date);
+}
+
+function overlaps(left, right) {
+  const rightSet = new Set(right || []);
+  return (left || []).some((item) => rightSet.has(item));
+}
+
+function pickFirstNonEmpty(...values) {
+  return values
+    .map((value) => typeof value === 'string' ? value.trim() : value)
+    .find((value) => Boolean(value)) || '';
+}
+
+function truncateText(text, maxLength) {
+  const source = String(text || '');
+  return source.length > maxLength ? `${source.slice(0, maxLength - 1)}…` : source;
+}
+
+function normalizeNarrativeText(text) {
+  const source = String(text || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s*\n\s*/g, ' / ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return source || '-';
+}
+
+function filterClinicalStatusItems(key, items) {
+  return unique(
+    (items || [])
+      .map((item) => typeof item === 'string' ? item : item?.text)
+      .map((item) => normalizeNarrativeText(item))
+      .filter((item) => item !== '-' && isMeaningfulDeviceItem(key, item))
+  );
+}
+
+function filterCarryoverActionItems(items) {
+  return unique(
+    (items || [])
+      .map((item) => normalizeNarrativeText(item))
+      .filter((item) => item !== '-' && isMeaningfulCarryoverItem(item))
+  );
+}
+
+function normalizeActivityValue(text) {
+  const source = normalizeNarrativeText(text);
+  const lower = source.toLowerCase();
+  if (!lower || lower === '-') return '-';
+
+  const exclusionPatterns = [
+    /counsel/,
+    /education/,
+    /teaching/,
+    /nutrition/,
+    /diet/,
+    /smoking/,
+    /addiction/,
+    /behavior/,
+    /psych/,
+    /therapy session/,
+    /consult/,
+    /documentation/,
+    /screening/,
+    /assessment/,
+    /follow-up/,
+    /blepharoplasty/,
+    /cataract/,
+    /medication/
+  ];
+  if (exclusionPatterns.some((pattern) => pattern.test(lower))) return '-';
+
+  const activityPatterns = [
+    /bed rest/,
+    /rest/,
+    /ambulat/,
+    /out of bed/,
+    /\boob\b/,
+    /chair/,
+    /wheelchair/,
+    /walk/,
+    /exercise/,
+    /activity as tolerated/,
+    /\baat\b/,
+    /range of motion/,
+    /\brom\b/,
+    /weight bearing/,
+    /mobil/,
+    /turn/,
+    /reposition/,
+    /fall precaution/,
+    /assist/,
+    /progressive mobility/
+  ];
+
+  return activityPatterns.some((pattern) => pattern.test(lower)) ? source : '-';
+}
+
+function extractCoreNursingProblem(text, fallbackDiagnoses) {
+  const lines = String(text || '')
+    .split(/\n+/)
+    .map((line) => normalizeNarrativeText(line))
+    .map((line) => normalizeClinicalPlaceholderText(line))
+    .filter((line) => line && line !== '-');
+
+  const focusLines = lines
+    .filter((line) => !/요청사항|서비스 요청|검사 요청|\bct\b|\bmri\b|x-ray|ultrasound|therapy|counsel|education|teaching/i.test(line))
+    .map((line) => line.replace(/^[-•]\s*/, '').replace(/^(주요 문제|간호 초점|간호계획)\s*:\s*/i, '').trim())
+    .filter(Boolean);
+
+  if (focusLines.length) {
+    return unique(focusLines).slice(0, 2).join(' / ');
+  }
+
+  const diagnoses = normalizeDiagnosisItems(fallbackDiagnoses);
+  if (diagnoses.length) {
+    return diagnoses.slice(0, 2).join(', ');
+  }
+
+  return '-';
+}
+
+function normalizeDiagnosisItems(items) {
+  return unique(
+    (items || [])
+      .map((item) => normalizeClinicalPlaceholderText(item))
+      .filter((item) => item && item !== '-')
+  );
+}
+
+function normalizeClinicalPlaceholderText(text) {
+  const source = normalizeNarrativeText(text);
+  if (!source || source === '-') return '-';
+  if (/fhir 진단 정보 없음|간호문제 정보 없음|외부 fhir 환자|정보 없음|unknown diagnosis/i.test(source)) return '-';
+  return source;
+}
+
+function isMeaningfulCarryoverItem(text) {
+  const source = normalizeNarrativeText(text).toLowerCase();
+  if (!source || source === '-') return false;
+  if (isGenericFollowUpItem(source)) return false;
+
+  const directActionPatterns = [
+    /재확인/,
+    /재평가/,
+    /확인/,
+    /사정/,
+    /모니터/,
+    /보고/,
+    /교육/,
+    /드레싱/,
+    /채혈/,
+    /검체/,
+    /투약/,
+    /약물/,
+    /hold/,
+    /보류/,
+    /중지/,
+    /notify/,
+    /check/,
+    /monitor/,
+    /assess/,
+    /recheck/
+  ];
+  const responsibilityPatterns = [
+    /라인/,
+    /튜브/,
+    /드레인/,
+    /카테터/,
+    /foley/,
+    /picc/,
+    /central line/,
+    /\biv\b/,
+    /산소/,
+    /oxygen/,
+    /혈당/,
+    /활력/,
+    /통증/,
+    /출혈/,
+    /상처/,
+    /배액/,
+    /소변/,
+    /\bi\/o\b/,
+    /낙상/,
+    /욕창/,
+    /격리/
+  ];
+  const timeSensitiveTargetPatterns = [/\bct\b/, /\bmri\b/, /x-ray/, /ultrasound/, /검사/, /imaging/];
+  const timeSensitiveActionPatterns = [/준비/, /결과/, /시행 여부/, /동의/, /이송/, /금식/, /\bnpo\b/, /전처치/];
+
+  if (directActionPatterns.some((pattern) => pattern.test(source))) return true;
+  if (responsibilityPatterns.some((pattern) => pattern.test(source))) return true;
+  if (timeSensitiveTargetPatterns.some((pattern) => pattern.test(source)) && timeSensitiveActionPatterns.some((pattern) => pattern.test(source))) {
+    return true;
+  }
+
+  return false;
+}
+
+function isGenericFollowUpItem(text) {
+  const source = normalizeNarrativeText(text).toLowerCase();
+  if (!source || source === '-') return true;
+
+  if (/경과 관찰/.test(source) && !/(활력|혈압|맥박|호흡|산소|혈당|소변|배액|출혈|의식|통증|상처|드레싱|라인|튜브|드레인|검사 결과|투약|약물)/.test(source)) {
+    return true;
+  }
+
+  if (/\bct\b|\bmri\b|x-ray|ultrasound|lipid panel|complete blood count|서비스 요청|검사 요청/.test(source) &&
+    !/(준비|확인|재확인|결과|시행 여부|동의|이송|금식|전처치)/.test(source)) {
+    return true;
+  }
+
+  return false;
+}
+
+function vitalFlagLabel(flag) {
+  const labels = {
+    bp: '혈압',
+    hr: '심박수',
+    bt: '체온',
+    rr: '호흡수',
+    spo2: '산소포화도'
+  };
+  return labels[flag] || flag;
+}
+
+function estimateRiskKeywordScore(text) {
+  const source = String(text || '').toLowerCase();
+  let score = 0;
+  if (/산소|spo2|resp|호흡|vent|기도|rr/.test(source)) score += 3;
+  if (/혈압|bp|심박|hr|shock|출혈|bleed|arrhythm|부정맥/.test(source)) score += 2;
+  if (/감염|격리|sepsis|fever|열|crp|wbc/.test(source)) score += 2;
+  if (/insulin|heparin|warfarin|kcl|potassium|morphine|fentanyl|vasopress|norepinephrine|epinephrine|chemo/.test(source)) score += 2;
+  return clampScore(score, 0, 6);
+}
+
+function estimateLabRiskScore(keys) {
+  const highRiskKeys = ['K', 'Na', 'Cr', 'Hb', 'WBC', 'Plt', 'CRP', 'BUN'];
+  const matched = (keys || []).filter((key) => highRiskKeys.includes(String(key)));
+  return clampScore(Math.max(2, matched.length * 2), 0, 6);
+}
+
+function isHighRiskMedication(orderText, policy) {
+  return (policy.highRiskMedicationKeywords || []).some((pattern) => pattern.test(String(orderText || '')));
+}
+
+function isMeaningfulDeviceItem(key, item) {
+  const text = normalizeNarrativeText(item).toLowerCase();
+  if (!text) return false;
+
+  const commonExclusions = [
+    /\bct\b/,
+    /\bmri\b/,
+    /x-ray/,
+    /ultrasound/,
+    /\bscan\b/,
+    /\bpanel\b/,
+    /\bculture\b/,
+    /\blipid\b/,
+    /complete blood count/,
+    /documentation/,
+    /\bconsult\b/,
+    /\bencounter\b/,
+    /\bstent\b/,
+    /arterial blood/,
+    /oxygen saturation/,
+    /\bspo2\b/,
+    /\bcontrast\b/
+  ];
+  if (commonExclusions.some((pattern) => pattern.test(text))) return false;
+
+  if (key === 'vent') {
+    if (/room air|^ra$|없음|none|no o2/.test(text)) return false;
+    return /ventilator|\bvent\b|trach|tracheost|intubat|nasal cannula|non-rebreather|\bhfnc\b|high flow|\becmo\b|\bcpap\b|\bbipap\b|oxygen therapy|\bo2\b|oxygen/.test(text);
+  }
+
+  if (key === 'lines') {
+    return /peripheral iv|\bmidline\b|\bpicc\b|central line|\bcvc\b|\bport\b|arterial line|\ba-line\b|\biv\b/.test(text);
+  }
+
+  if (key === 'tubes') {
+    return /\bfoley\b|\bcatheter\b|\bng\b|\bog\b|\bpeg\b|\bg-tube\b|feeding tube|urinary catheter|\btube\b/.test(text)
+      && !/chest tube|drain|hemovac|jackson-pratt|\bjp\b/.test(text);
+  }
+
+  if (key === 'drains') {
+    return /\bdrain\b|hemovac|\bjp\b|jackson-pratt|chest tube|biliary drain|nephrostomy/.test(text);
+  }
+
+  return true;
+}
+
+function detectHandoffChanges(prev, curr, baseline) {
+  if (!curr) return [];
+  const previous = prev || { clinicalStatus: {}, orders: { active: [] }, vitals: { latest: {} }, labs: { latest: {} }, nursingActions: { completed: [], pending: [] } };
+  const events = [];
+  const prevOrders = new Set(previous.orders.active || []);
+  const currOrders = new Set(curr.orders.active || []);
+
+  buildStatusChangeEvents(previous, curr).forEach((item) => events.push(item));
+
+  [...currOrders].filter((item) => !prevOrders.has(item)).slice(0, 4).forEach((item) => {
+    events.push(createHandoffEvent('new_order', curr.date, `신규 오더 추가: ${item}`, '직전 날짜 대비 새 활성 오더입니다.', [`order:${item}`], 'situation'));
+  });
+
+  [...prevOrders].filter((item) => !currOrders.has(item)).slice(0, 4).forEach((item) => {
+    events.push(createHandoffEvent('discontinued_order', curr.date, `중단 오더 확인: ${item}`, '직전 날짜에는 있었으나 현재 활성 오더에서 제외되었습니다.', [`order:${item}`], 'recommendation'));
+  });
+
+  detectVitalEvents(previous, curr, baseline).forEach((item) => events.push(item));
+  detectLabEvents(previous, curr).forEach((item) => events.push(item));
+  detectNursingActionEvents(previous, curr).forEach((item) => events.push(item));
+  return events;
+}
+
+function buildStatusChangeEvents(prev, curr) {
+  const events = [];
+  const compareList = (typeLabel, beforeList, afterList) => {
+    const before = new Set(beforeList || []);
+    const after = new Set(afterList || []);
+    const added = [...after].filter((item) => !before.has(item));
+    const removed = [...before].filter((item) => !after.has(item));
+    if (added.length) {
+      events.push(createHandoffEvent('status_change', curr.date, `${typeLabel} 추가: ${added.join(', ')}`, `${typeLabel} 상태가 새로 확인되었습니다.`, added.map((item) => `${typeLabel}:${item}`), 'situation'));
+    }
+    if (removed.length) {
+      events.push(createHandoffEvent('status_change', curr.date, `${typeLabel} 제거: ${removed.join(', ')}`, `${typeLabel} 상태가 해제 또는 종료되었습니다.`, removed.map((item) => `${typeLabel}:${item}`), 'background'));
+    }
+  };
+
+  if ((prev.clinicalStatus?.activity || '-') !== (curr.clinicalStatus?.activity || '-')) {
+    events.push(createHandoffEvent('status_change', curr.date, `활동 수준 변화: ${prev.clinicalStatus?.activity || '-'} -> ${curr.clinicalStatus?.activity || '-'}`, '환자 활동 또는 안정 수준이 변경되었습니다.', ['activity'], 'situation'));
+  }
+  if ((prev.clinicalStatus?.isolation || '-') !== (curr.clinicalStatus?.isolation || '-')) {
+    events.push(createHandoffEvent('status_change', curr.date, `격리/주의 변화: ${prev.clinicalStatus?.isolation || '-'} -> ${curr.clinicalStatus?.isolation || '-'}`, '격리 또는 감염 관련 주의사항이 변경되었습니다.', ['isolation'], 'situation'));
+  }
+
+  compareList('Line', prev.clinicalStatus?.lines, curr.clinicalStatus?.lines);
+  compareList('Tube', prev.clinicalStatus?.tubes, curr.clinicalStatus?.tubes);
+  compareList('Drain', prev.clinicalStatus?.drains, curr.clinicalStatus?.drains);
+  compareList('Vent/O2', prev.clinicalStatus?.vent, curr.clinicalStatus?.vent);
+  return events;
+}
+
+function detectVitalEvents(prev, curr, baseline) {
+  const events = [];
+  const vital = curr.vitals?.latest || {};
+  const prevVital = prev.vitals?.latest || {};
+  const baseVital = baseline?.vitals?.latest || prevVital;
+  const abnormalFlags = curr.vitals?.abnormalFlags || [];
+
+  if (abnormalFlags.length) {
+    events.push(createHandoffEvent('vital_abnormal', curr.date, `활력징후 이상: BP ${vital.bp}, HR ${vital.hr}, BT ${vital.bt}, SpO2 ${vital.spo2}%`, `이상 항목: ${abnormalFlags.join(', ')}`, abnormalFlags.map((item) => `vital:${item}`), 'situation'));
+  }
+
+  [
+    { key: 'systolic', label: '수축기 혈압', threshold: 20 },
+    { key: 'hr', label: '심박수', threshold: 20 },
+    { key: 'bt', label: '체온', threshold: 1 },
+    { key: 'spo2', label: '산소포화도', threshold: 3 }
+  ].forEach(({ key, label, threshold }) => {
+    const prevValue = Number(prevVital[key]);
+    const currValue = Number(vital[key]);
+    const baseValue = Number(baseVital[key]);
+    if (Number.isFinite(prevValue) && Number.isFinite(currValue) && Math.abs(currValue - prevValue) >= threshold) {
+      events.push(createHandoffEvent('vital_abnormal', curr.date, `${label} 변화: ${prevValue} -> ${currValue}`, '직전 날짜 대비 유의한 활력 변화입니다.', [`vital:${key}`], 'assessment'));
+    } else if (Number.isFinite(baseValue) && Number.isFinite(currValue) && Math.abs(currValue - baseValue) >= threshold) {
+      events.push(createHandoffEvent('vital_abnormal', curr.date, `${label} baseline 대비 변화: ${baseValue} -> ${currValue}`, '기준 시점 대비 유의한 활력 변화입니다.', [`vital:${key}`], 'assessment'));
+    }
+  });
+
+  return uniqueBy(events, (item) => `${item.type}-${item.summary}`);
+}
+
+function detectLabEvents(prev, curr) {
+  const events = [];
+  const prevLabs = prev.labs?.latest || {};
+  const currLabs = curr.labs?.latest || {};
+
+  unique([...Object.keys(prevLabs), ...Object.keys(currLabs)]).forEach((key) => {
+    const prevValue = prevLabs[key];
+    const currValue = currLabs[key];
+    if (typeof currValue === 'undefined' || currValue === '-') return;
+    const prevStatus = getLabStatus(key, String(prevValue || '-')).status;
+    const currStatus = getLabStatus(key, String(currValue)).status;
+    const numericPrev = parseFloat(String(prevValue || '').replace(/[^0-9.-]/g, ''));
+    const numericCurr = parseFloat(String(currValue || '').replace(/[^0-9.-]/g, ''));
+
+    if (currStatus !== 'normal' && prevStatus === 'normal') {
+      events.push(createHandoffEvent('lab_change', curr.date, `검사 이상 전환: ${key} ${formatLabValue(String(currValue))}`, '정상에서 비정상으로 전환된 검사입니다.', [`lab:${key}`], 'assessment'));
+    } else if (currStatus !== 'normal' && prevStatus === currStatus && Number.isFinite(numericPrev) && Number.isFinite(numericCurr) && Math.abs(numericCurr - numericPrev) > 0) {
+      const direction = numericCurr > numericPrev ? '악화/상승' : '호전/감소';
+      events.push(createHandoffEvent('lab_change', curr.date, `주요 검사 변화: ${key} ${numericPrev} -> ${numericCurr}`, `비정상 상태가 지속되며 ${direction} 추세입니다.`, [`lab:${key}`], 'assessment'));
+    }
+  });
+
+  return uniqueBy(events, (item) => `${item.type}-${item.summary}`);
+}
+
+function detectNursingActionEvents(prev, curr) {
+  const events = [];
+  const prevCompleted = new Set(prev.nursingActions?.completed || []);
+
+  (curr.nursingActions?.completed || []).filter((item) => !prevCompleted.has(item)).slice(0, 3).forEach((item) => {
+    events.push(createHandoffEvent('nursing_action', curr.date, `간호 수행 확인: ${item}`, '당일 새로 수행 또는 기록 확인된 간호 항목입니다.', [`nursing:${item}`], 'background'));
+  });
+
+  (curr.nursingActions?.pending || []).slice(0, 4).forEach((item) => {
+    events.push(createHandoffEvent('nursing_action', curr.date, `다음 근무조 확인 필요: ${item}`, '현재 follow-up 또는 재확인이 필요한 간호/처치 항목입니다.', [`pending:${item}`], 'recommendation'));
+  });
+
+  return uniqueBy(events, (item) => `${item.type}-${item.summary}`);
+}
+
+function createHandoffEvent(type, date, summary, detail, evidence, sbarSection) {
+  return {
+    type,
+    date,
+    summary,
+    detail,
+    evidence: evidence && evidence.length ? evidence : ['evidence 부족'],
+    sbarSection
+  };
+}
+
+function scoreHandoffEvents(events, context) {
+  const weights = {
+    status_change: 100,
+    new_order: 90,
+    discontinued_order: 85,
+    vital_abnormal: 80,
+    lab_change: 75,
+    nursing_action: 60
+  };
+
+  return (events || []).map((item) => {
+    let score = weights[item.type] || 50;
+    const text = `${item.summary} ${item.detail}`.toLowerCase();
+    if (item.type === 'vital_abnormal' && /spo2|bp|hr|bt/.test(text)) score += 12;
+    if (item.type === 'status_change' && /vent|o2|drain|line|tube|격리/.test(text)) score += 10;
+    if (item.type === 'lab_change' && /k|na|cr|plt|wbc|hb/.test(text)) score += 8;
+    if ((item.evidence || []).length > 1) score += 3;
+    if (context?.current?.date === item.date) score += 5;
+
+    return {
+      ...item,
+      score,
+      priorityBand: score >= 100 ? 'urgent' : score >= 85 ? 'high' : score >= 70 ? 'moderate' : 'routine'
+    };
+  }).sort((a, b) => b.score - a.score);
+}
+
+function buildSbarPayload(patient, analysis) {
+  const current = analysis.current;
+  const prioritized = analysis.prioritizedHandoffItems || [];
+  const situation = prioritized.filter((item) => item.sbarSection === 'situation').slice(0, 3);
+  const assessment = prioritized.filter((item) => item.sbarSection === 'assessment').slice(0, 4);
+  const recommendation = prioritized.filter((item) => item.sbarSection === 'recommendation').slice(0, 5);
+  const background = uniqueBy(analysis.timelineEvents || [], (item) => `${item.date}-${item.summary}`).slice(0, 6).map((item) => ({
+    ...item,
+    hd: getHD(patient.admitDate, item.date)
+  }));
+
+  if (!situation.length && current) {
+    situation.push({
+      summary: `현재 활력: BP ${current.vitals.latest.bp}, HR ${current.vitals.latest.hr}, BT ${current.vitals.latest.bt}, SpO2 ${current.vitals.latest.spo2}%`,
+      detail: current.vitals.abnormalFlags.length ? `이상 항목: ${current.vitals.abnormalFlags.join(', ')}` : '현재 활력 이상 플래그는 없습니다.',
+      priorityBand: current.vitals.abnormalFlags.length ? 'high' : 'routine'
+    });
+  }
+
+  if (!recommendation.length && current) {
+    (current.nursingActions?.pending || []).slice(0, 3).forEach((item) => {
+      recommendation.push({
+        summary: `인계 후 추적 필요: ${item}`,
+        detail: '다음 근무조에서 완료 여부를 재확인합니다.',
+        priorityBand: 'moderate'
+      });
+    });
+  }
+
+  return { situation, background, assessment, recommendation };
+}
+
+function renderHandoffBulletList(items) {
+  return `<ul style="padding-left:15px; margin:0; list-style:disc;">${items.map((item) => `
+    <li style="margin-bottom:6px;">
+      <div style="font-weight:bold; color:${handoffPriorityColor(item.priorityBand)};">${item.summary}</div>
+      <div style="font-size:12px; color:#555;">${item.detail || '-'}</div>
+    </li>
+  `).join('')}</ul>`;
+}
+
+function renderAssessmentList(items) {
+  return `<div style="display:flex; flex-direction:column; gap:8px;">${items.map((item) => `
+    <div style="padding:8px 10px; border-radius:8px; background:#f8fafc; border-left:4px solid ${handoffPriorityColor(item.priorityBand)};">
+      <div style="font-weight:bold; color:#263238;">${item.summary}</div>
+      <div style="font-size:12px; color:#546e7a; margin-top:3px;">${item.detail || '-'}</div>
+    </div>
+  `).join('')}</div>`;
+}
+
+function renderBackgroundCard(item) {
+  return `
+    <div style="margin-bottom:10px; padding:8px; background:#f9f9f9; border-left:3px solid ${handoffPriorityColor(item.priorityBand)}; border-radius:4px;">
+      <div style="font-weight:bold; color:#333; margin-bottom:4px;">?뱟 ${String(item.date).slice(5)} (HD#${item.hd || '-'})</div>
+      <div style="line-height:1.5; font-size:13px; color:#444;">${item.summary}</div>
+      <div style="line-height:1.5; font-size:12px; color:#666; margin-top:3px;">${item.detail || ''}</div>
+    </div>
+  `;
+}
+
+function renderRoutineOrderLink(endData, dates) {
+  if (!(endData.docOrders && endData.docOrders.routine && endData.docOrders.routine.length > 0)) return '';
+  const routineListStr = encodeURIComponent(JSON.stringify(endData.docOrders.routine));
+  const dateStr = dates[dates.length - 1];
+  return `
+    <div style="margin-top:10px;">
+      <span style="color:#1976d2; cursor:pointer; text-decoration:underline; font-weight:bold;" onclick="openRoutineModal('${dateStr}', '${routineListStr}')">
+        ?뱥 二쇱튂??猷⑦떞 ?ㅻ뜑 ?뺤씤 (Click)
+      </span>
+    </div>
+  `;
+}
+
+function handoffPriorityColor(priorityBand) {
+  if (priorityBand === 'urgent') return '#c62828';
+  if (priorityBand === 'high') return '#ef6c00';
+  if (priorityBand === 'moderate') return '#1565c0';
+  return '#546e7a';
+}
+
+function toItemText(items) {
+  return (items || []).map((item) => typeof item === 'string' ? item : item.text).filter(Boolean);
+}
+
+function detectVitalAbnormalFlags(vital) {
+  const bpParts = String(vital?.bp || '120/80').split('/');
+  const systolic = Number(bpParts[0]) || 120;
+  const hr = Number(vital?.hr) || 80;
+  const bt = Number(vital?.bt) || 36.8;
+  const rr = Number(vital?.rr) || 18;
+  const spo2 = Number(vital?.spo2) || 98;
+  const flags = [];
+
+  if (systolic < 90 || systolic >= 180) flags.push('bp');
+  if (hr < 50 || hr >= 120) flags.push('hr');
+  if (bt >= 38 || bt < 36) flags.push('bt');
+  if (rr >= 24 || rr < 10) flags.push('rr');
+  if (spo2 < 92) flags.push('spo2');
+  return flags;
+}
+
+function buildAbnormalLabList(flatLabs) {
+  return Object.keys(flatLabs || {}).map((key) => ({
+    key,
+    value: flatLabs[key],
+    status: getLabStatus(key, String(flatLabs[key])).status
+  })).filter((item) => item.status !== 'normal');
+}
+
+function flattenLabMap(labs) {
+  const result = {};
+  Object.values(labs || {}).forEach((category) => Object.assign(result, category || {}));
+  return result;
+}
+
+function uniqueBy(items, keyFn) {
+  const seen = new Set();
+  return (items || []).filter((item) => {
+    const key = keyFn(item);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 openAIPanel = function () {
   if (!selectedPatientId) return alert("환자를 먼저 선택해주세요.");
