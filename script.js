@@ -1255,9 +1255,340 @@ updateDashboard = async function (pid) {
   }
   setHTML('docOrderList', docHtml || '특이 처방 없음');
 
-  const aiPtDiv = document.getElementById('aiPanelPatient');
+const aiPtDiv = document.getElementById('aiPanelPatient');
   if (aiPtDiv) aiPtDiv.textContent = `${p.name} (${p.age}/${p.gender}) - ${p.diagnosis}`;
 };
+
+function generateNarrativeSBAR(p, startData, endData, dates) {
+  const analysis = buildHandoffAnalysis(p, dates);
+  const historyList = (endData.pastHistory || []).join(', ');
+  const historyHTML = historyList
+    ? `<div style="margin-bottom:4px; color:#424242; font-size:11px;"><b>\uc911\uc694 \uacfc\uac70\ub825</b> ${escapeHtml(historyList)}</div>`
+    : '';
+  const longitudinalSummaryHTML = renderLongitudinalSummaryPanel(analysis.longitudinalSummary);
+  const situationItems = analysis.sbarPayload.situation.length
+    ? renderHandoffBulletList(analysis.sbarPayload.situation)
+    : `<div style="color:#666;">\uc911\ub300\ud55c \uc0c1\ud0dc\ubcc0\ud654\ub294 \ud655\uc778\ub418\uc9c0 \uc54a\uc558\uc2b5\ub2c8\ub2e4.</div>`;
+  const backgroundCards = analysis.sbarPayload.background.length
+    ? analysis.sbarPayload.background.map((item) => renderBackgroundCard(item)).join('')
+    : `<div style="padding:5px; color:#666;">\uc120\ud0dd \uae30\uac04 \ub3d9\uc548 \ud575\uc2ec \ubcc0\ud654\uac00 \ud655\uc778\ub418\uc9c0 \uc54a\uc558\uc2b5\ub2c8\ub2e4.</div>`;
+  const assessmentItems = analysis.sbarPayload.assessment.length
+    ? renderAssessmentList(analysis.sbarPayload.assessment)
+    : `<div style="color:#666;">\uc989\uc2dc \uc6b0\uc120\uc21c\uc704\ub85c \ubd84\ub958\ub41c \ubb38\uc81c\ub294 \uc5c6\uc2b5\ub2c8\ub2e4.</div>`;
+  const recommendationItems = analysis.sbarPayload.recommendation.length
+    ? renderHandoffBulletList(analysis.sbarPayload.recommendation)
+    : `<div style="color:#666;">\ud604\uc7ac \uacc4\ud68d \uc720\uc9c0 \ubc0f routine monitoring \uad8c\uc7a5.</div>`;
+
+  const assessmentHTML = `
+    ${assessmentItems}
+    <div style="display:flex; flex-direction:column; gap:10px; margin-top:12px;">
+      <button class="sbar-link-btn" onclick="openLabModal('${p.id}', 'Hematology')">
+        \uc8fc\uc694 \uac80\uc0ac \uacb0\uacfc \uc790\uc138\ud788 \ubcf4\uae30
+      </button>
+      <button class="sbar-link-btn" onclick="alert('PACS Viewer: ${endData.specials && endData.specials.length > 0 ? endData.specials[0] : '\uc5f0\uacb0\ub41c \uc601\uc0c1 \uc815\ubcf4 \uc5c6\uc74c'}')">
+        \uc601\uc0c1 / \ud2b9\uc218 \uac80\uc0ac \ubcf4\uae30
+      </button>
+      <button class="sbar-link-btn" onclick="alert('\ud611\uc9c4: ${endData.consults ? endData.consults : '\uc815\ubcf4 \uc5c6\uc74c'}')">
+        \ud611\uc9c4 \uc694\uccad \ud604\ud669 \ubcf4\uae30
+      </button>
+    </div>
+  `;
+
+  return `
+    ${longitudinalSummaryHTML}
+    <div class="sbar-section">
+      <div class="sbar-header situation">S - Situation</div>
+      <div class="sbar-body">
+        <div style="margin-bottom:4px;"><b>\ud604\uc7ac \uac04\ud638 \ucd08\uc810:</b> ${escapeHtml(endData.nursingProblem || '-')}</div>
+        <div style="margin-bottom:4px;"><b>\uc785\uc6d0 \ubc30\uacbd:</b> ${escapeHtml(normalizeNarrativeText(p.admissionNote || p.admitReason || '-'))}</div>
+        ${historyHTML}
+        <div style="margin-bottom:8px;"><b>\ud604\uc7ac \ud65c\ub825:</b> BP ${escapeHtml(endData.vital.bp)}, HR ${escapeHtml(String(endData.vital.hr))}, BT ${escapeHtml(String(endData.vital.bt))}, SpO2 ${escapeHtml(String(endData.vital.spo2))}%</div>
+        ${situationItems}
+      </div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-header background">B - Background</div>
+      <div class="sbar-body">${backgroundCards}</div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-header assessment">A - Assessment</div>
+      <div class="sbar-body">${assessmentHTML}</div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-header recommendation">R - Recommendation</div>
+      <div class="sbar-body">
+        ${recommendationItems}
+        ${renderRoutineOrderLink(endData, dates)}
+      </div>
+    </div>
+  `;
+}
+
+function renderLongitudinalSummaryPanel(summary) {
+  if (!summary || !summary.sections) {
+    return `
+      <div class="longitudinal-panel">
+        <div class="longitudinal-panel-header">
+          <div class="longitudinal-panel-title">\u0032\ub2e8\uacc4 \ud575\uc2ec \ud658\uc790\uc694\uc57d</div>
+          <div class="longitudinal-panel-subtitle">\uc885\ub2e8 \ub370\uc774\ud130\uac00 \ubd80\uc871\ud574 \uc694\uc57d\uc744 \ub9cc\ub4e4\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4.</div>
+        </div>
+      </div>
+    `;
+  }
+
+  const chipItems = [
+    `${summary.dateRange?.start || '-'} ~ ${summary.dateRange?.end || '-'}`,
+    `\ud6c4\ubcf4 ${summary.debug?.candidateCount || 0}\uac1c \ubd84\uc11d`,
+    `\ud604\uc7ac \uae30\uc900 ${summary.currentDate || '-'}`
+  ];
+
+  return `
+    <div class="longitudinal-panel">
+      <div class="longitudinal-panel-header">
+        <div class="longitudinal-panel-title">\u0032\ub2e8\uacc4 \ud575\uc2ec \ud658\uc790\uc694\uc57d</div>
+        <div class="longitudinal-panel-subtitle">n\uc77c\uce58 \ud658\uc790 \ub370\uc774\ud130\ub97c \uc555\ucd95\ud574 \ud604\uc7ac \ubc30\uacbd, \uc9c0\uc18d \ubb38\uc81c, \ub2e4\uc74c \uadfc\ubb34\uc870 \uc778\uacc4 \ucc45\uc784\uc744 \uba3c\uc800 \ubcf4\uc5ec\uc90d\ub2c8\ub2e4.</div>
+      </div>
+      <div class="longitudinal-panel-body">
+        <div class="longitudinal-chip-row">
+          ${chipItems.map((item) => `<span class="longitudinal-chip">${escapeHtml(item)}</span>`).join('')}
+        </div>
+        <div class="longitudinal-concise">${escapeHtml(summary.conciseSummary || '\uc694\uc57d \uc815\ubcf4 \uc5c6\uc74c')}</div>
+        <div class="longitudinal-groups">
+          ${renderLongitudinalSummaryGroup('\ud658\uc790 \uc815\uccb4\uc131', '\uc774 \ud658\uc790\uac00 \uc5b4\ub5a4 \ud658\uc790\uc778\uc9c0 \ud30c\uc545\ud558\ub294 \uc601\uc5ed', summary.sections.identity, '\uc815\uccb4\uc131 \uc694\uc57d \uc815\ubcf4 \uc5c6\uc74c')}
+          ${renderLongitudinalSummaryGroup('\ud604\uc7ac \uad00\ub9ac \ud2c0', '\ud604\uc7ac \uc720\uc9c0 \uc911\uc778 \uad00\ub9ac \uc870\uac74\uacfc \uc8fc\uc758\uc0ac\ud56d', summary.sections.careFrame, '\ud604\uc7ac \uad00\ub9ac \ud2c0 \uc815\ubcf4 \uc5c6\uc74c')}
+          ${renderLongitudinalSummaryGroup('\uc9c0\uc18d \ud575\uc2ec \ubb38\uc81c', '\uae30\uac04 \uc804\uccb4\uc5d0\uc11c \ub0a8\uc544 \uc788\ub294 \ud575\uc2ec \ubb38\uc81c', summary.sections.persistentConcerns, '\uc9c0\uc18d \ud575\uc2ec \ubb38\uc81c \uc5c6\uc74c')}
+          ${renderLongitudinalSummaryGroup('\uc9d1\uc911 \uad00\ucc30', '\uc774\ubc88 \uadfc\ubb34\uc870\uac00 \ub354 \uc8fc\uc758\ud574\uc11c \ubcfc \ud56d\ubaa9', summary.sections.watchItems, '\uc9d1\uc911 \uad00\ucc30 \ud56d\ubaa9 \uc5c6\uc74c')}
+          ${renderLongitudinalSummaryGroup('\uc9c0\uc18d \uc778\uacc4 \ucc45\uc784', '\ub2e4\uc74c \uadfc\ubb34\uc870\uac00 \uc774\uc5b4\ubc1b\uc544\uc57c \ud560 \ucc45\uc784', summary.sections.carryoverItems, '\uc9c0\uc18d \uc778\uacc4 \ucc45\uc784 \uc5c6\uc74c')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderLongitudinalSummaryGroup(title, description, items, emptyText) {
+  const body = items && items.length
+    ? items.map((item) => renderLongitudinalSummaryItem(item)).join('')
+    : `<div class="longitudinal-empty">${escapeHtml(emptyText)}</div>`;
+
+  return `
+    <section class="longitudinal-group">
+      <div class="longitudinal-group-header">
+        <div class="longitudinal-group-title">${escapeHtml(title)}</div>
+        <div class="longitudinal-group-description">${escapeHtml(description)}</div>
+      </div>
+      <div class="longitudinal-group-body">${body}</div>
+    </section>
+  `;
+}
+
+function renderLongitudinalSummaryItem(item) {
+  const evidence = (item.evidence || []).slice(0, 4).join(', ');
+  const sourceDates = (item.sourceDates || []).join(', ');
+  const reasoning = (item.reasoning || []).join(' · ');
+
+  return `
+    <article class="longitudinal-item">
+      <div class="longitudinal-item-top">
+        <div class="longitudinal-item-summary">${escapeHtml(item.summary || '-')}</div>
+        <span class="longitudinal-band ${longitudinalBandClass(item.importanceBand)}">${escapeHtml(longitudinalBandLabel(item.importanceBand))} · ${Number(item.score || 0)}점</span>
+      </div>
+      ${item.detail ? `<div class="longitudinal-item-detail">${escapeHtml(item.detail)}</div>` : ''}
+      <details class="longitudinal-item-details">
+        <summary>\ud310\ub2e8 \uadfc\uac70 \ubcf4\uae30</summary>
+        <div class="longitudinal-item-meta"><b>\uadfc\uac70:</b> ${escapeHtml(evidence || 'evidence 부족')}</div>
+        <div class="longitudinal-item-meta"><b>\uad00\ucc30 \ub0a0\uc9dc:</b> ${escapeHtml(sourceDates || '-')}</div>
+        <div class="longitudinal-item-meta"><b>\uc810\uc218 \ubd84\ud574:</b> ${escapeHtml(reasoning || '-')}</div>
+      </details>
+    </article>
+  `;
+}
+
+function longitudinalBandLabel(band) {
+  const map = {
+    core: '\ud575\uc2ec',
+    focus: '\uc9d1\uc911',
+    supporting: '\ubcf4\uc870',
+    background: '\ubc30\uacbd'
+  };
+  return map[band] || '\ubc30\uacbd';
+}
+
+if (window.handoffAppApi) {
+  window.handoffAppApi.generateNarrativeSBAR = generateNarrativeSBAR;
+}
+
+function generateNarrativeSBAR(p, startData, endData, dates) {
+  const analysis = buildHandoffAnalysis(p, dates);
+  const historyList = (endData.pastHistory || []).join(', ');
+  const historyHTML = historyList
+    ? `<div style="margin-bottom:4px; color:#424242; font-size:11px;"><b>중요 과거력</b> ${escapeHtml(historyList)}</div>`
+    : '';
+  const longitudinalSummaryHTML = renderLongitudinalSummaryPanel(analysis.longitudinalSummary);
+  const situationItems = analysis.sbarPayload.situation.length
+    ? renderHandoffBulletList(analysis.sbarPayload.situation)
+    : `<div style="color:#666;">중대한 상태변화는 확인되지 않았습니다.</div>`;
+  const backgroundCards = analysis.sbarPayload.background.length
+    ? analysis.sbarPayload.background.map((item) => renderBackgroundCard(item)).join('')
+    : `<div style="padding:5px; color:#666;">선택 기간 동안 핵심 변화가 확인되지 않았습니다.</div>`;
+  const assessmentItems = analysis.sbarPayload.assessment.length
+    ? renderAssessmentList(analysis.sbarPayload.assessment)
+    : `<div style="color:#666;">즉시 우선순위로 분류된 문제는 없습니다.</div>`;
+  const recommendationItems = analysis.sbarPayload.recommendation.length
+    ? renderHandoffBulletList(analysis.sbarPayload.recommendation)
+    : `<div style="color:#666;">현재 계획 유지 및 routine monitoring 권장.</div>`;
+
+  const assessmentHTML = `
+    ${assessmentItems}
+    <div style="display:flex; flex-direction:column; gap:10px; margin-top:12px;">
+      <button class="sbar-link-btn" onclick="openLabModal('${p.id}', 'Hematology')">
+        주요 검사 결과 자세히 보기
+      </button>
+      <button class="sbar-link-btn" onclick="alert('PACS Viewer: ${endData.specials && endData.specials.length > 0 ? endData.specials[0] : '연결된 영상 정보 없음'}')">
+        영상 / 특수 검사 보기
+      </button>
+      <button class="sbar-link-btn" onclick="alert('협진: ${endData.consults ? endData.consults : '정보 없음'}')">
+        협진 요청 현황 보기
+      </button>
+    </div>
+  `;
+
+  return `
+    ${longitudinalSummaryHTML}
+    <div class="sbar-section">
+      <div class="sbar-header situation">S - Situation</div>
+      <div class="sbar-body">
+        <div style="margin-bottom:4px;"><b>현재 간호 초점:</b> ${escapeHtml(endData.nursingProblem || '-')}</div>
+        <div style="margin-bottom:4px;"><b>입원 배경:</b> ${escapeHtml(normalizeNarrativeText(p.admissionNote || p.admitReason || '-'))}</div>
+        ${historyHTML}
+        <div style="margin-bottom:8px;"><b>현재 활력:</b> BP ${escapeHtml(endData.vital.bp)}, HR ${escapeHtml(String(endData.vital.hr))}, BT ${escapeHtml(String(endData.vital.bt))}, SpO2 ${escapeHtml(String(endData.vital.spo2))}%</div>
+        ${situationItems}
+      </div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-header background">B - Background</div>
+      <div class="sbar-body">${backgroundCards}</div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-header assessment">A - Assessment</div>
+      <div class="sbar-body">${assessmentHTML}</div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-header recommendation">R - Recommendation</div>
+      <div class="sbar-body">
+        ${recommendationItems}
+        ${renderRoutineOrderLink(endData, dates)}
+      </div>
+    </div>
+  `;
+}
+
+function renderLongitudinalSummaryPanel(summary) {
+  if (!summary || !summary.sections) {
+    return `
+      <div class="longitudinal-panel">
+        <div class="longitudinal-panel-header">
+          <div class="longitudinal-panel-title">2단계 핵심 환자요약</div>
+          <div class="longitudinal-panel-subtitle">종단 데이터가 부족해 요약을 만들지 못했습니다.</div>
+        </div>
+      </div>
+    `;
+  }
+
+  const chipItems = [
+    `${summary.dateRange?.start || '-'} ~ ${summary.dateRange?.end || '-'}`,
+    `후보 ${summary.debug?.candidateCount || 0}개 분석`,
+    `현재 기준 ${summary.currentDate || '-'}`
+  ];
+
+  return `
+    <div class="longitudinal-panel">
+      <div class="longitudinal-panel-header">
+        <div class="longitudinal-panel-title">2단계 핵심 환자요약</div>
+        <div class="longitudinal-panel-subtitle">n일치 환자 데이터를 압축해 현재 배경, 지속 문제, 다음 근무조 인계 책임을 먼저 보여줍니다.</div>
+      </div>
+      <div class="longitudinal-panel-body">
+        <div class="longitudinal-chip-row">
+          ${chipItems.map((item) => `<span class="longitudinal-chip">${escapeHtml(item)}</span>`).join('')}
+        </div>
+        <div class="longitudinal-concise">${escapeHtml(summary.conciseSummary || '요약 정보 없음')}</div>
+        <div class="longitudinal-groups">
+          ${renderLongitudinalSummaryGroup('환자 정체성', '이 환자가 어떤 환자인지 파악하는 영역', summary.sections.identity, '정체성 요약 정보 없음')}
+          ${renderLongitudinalSummaryGroup('현재 관리 틀', '현재 유지 중인 관리 조건과 주의사항', summary.sections.careFrame, '현재 관리 틀 정보 없음')}
+          ${renderLongitudinalSummaryGroup('지속 핵심 문제', '기간 전체에서 남아 있는 핵심 문제', summary.sections.persistentConcerns, '지속 핵심 문제 없음')}
+          ${renderLongitudinalSummaryGroup('집중 관찰', '이번 근무조가 더 주의해서 볼 항목', summary.sections.watchItems, '집중 관찰 항목 없음')}
+          ${renderLongitudinalSummaryGroup('지속 인계 책임', '다음 근무조가 이어받아야 할 책임', summary.sections.carryoverItems, '지속 인계 책임 없음')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderLongitudinalSummaryGroup(title, description, items, emptyText) {
+  const body = items && items.length
+    ? items.map((item) => renderLongitudinalSummaryItem(item)).join('')
+    : `<div class="longitudinal-empty">${escapeHtml(emptyText)}</div>`;
+
+  return `
+    <section class="longitudinal-group">
+      <div class="longitudinal-group-header">
+        <div class="longitudinal-group-title">${escapeHtml(title)}</div>
+        <div class="longitudinal-group-description">${escapeHtml(description)}</div>
+      </div>
+      <div class="longitudinal-group-body">${body}</div>
+    </section>
+  `;
+}
+
+function renderLongitudinalSummaryItem(item) {
+  const evidence = (item.evidence || []).slice(0, 4).join(', ');
+  const sourceDates = (item.sourceDates || []).join(', ');
+  const reasoning = (item.reasoning || []).join(' · ');
+
+  return `
+    <article class="longitudinal-item">
+      <div class="longitudinal-item-top">
+        <div class="longitudinal-item-summary">${escapeHtml(item.summary || '-')}</div>
+        <span class="longitudinal-band ${longitudinalBandClass(item.importanceBand)}">${escapeHtml(longitudinalBandLabel(item.importanceBand))} · ${Number(item.score || 0)}점</span>
+      </div>
+      ${item.detail ? `<div class="longitudinal-item-detail">${escapeHtml(item.detail)}</div>` : ''}
+      <details class="longitudinal-item-details">
+        <summary>판단 근거 보기</summary>
+        <div class="longitudinal-item-meta"><b>근거:</b> ${escapeHtml(evidence || 'evidence 부족')}</div>
+        <div class="longitudinal-item-meta"><b>관찰 날짜:</b> ${escapeHtml(sourceDates || '-')}</div>
+        <div class="longitudinal-item-meta"><b>점수 분해:</b> ${escapeHtml(reasoning || '-')}</div>
+      </details>
+    </article>
+  `;
+}
+
+function longitudinalBandClass(band) {
+  const map = {
+    core: 'core',
+    focus: 'focus',
+    supporting: 'supporting',
+    background: 'background'
+  };
+  return map[band] || 'background';
+}
+
+function longitudinalBandLabel(band) {
+  const map = {
+    core: '핵심',
+    focus: '집중',
+    supporting: '보조',
+    background: '배경'
+  };
+  return map[band] || '배경';
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 if (window.handoffAppApi) {
   window.handoffAppApi.buildNormalizedDailyTimeline = buildNormalizedDailyTimeline;
@@ -1325,6 +1656,187 @@ function generateNarrativeSBAR(p, startData, endData, dates) {
       </div>
     </div>
   `;
+}
+
+function renderLongitudinalSummaryPanel(summary) {
+  if (!summary || !summary.sections) {
+    return `
+      <div class="longitudinal-panel">
+        <div class="longitudinal-panel-header">
+          <div class="longitudinal-panel-title">\u0032\ub2e8\uacc4 \ud575\uc2ec \ud658\uc790 \uc694\uc57d</div>
+          <div class="longitudinal-panel-subtitle">\uc885\ub2e8 \ub370\uc774\ud130\uac00 \ubd80\uc871\ud574 \uc694\uc57d\uc744 \ub9cc\ub4e4\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4.</div>
+        </div>
+      </div>
+    `;
+  }
+
+  const chipItems = [
+    `${summary.dateRange?.start || '-'} ~ ${summary.dateRange?.end || '-'}`,
+    `\ud6c4\ubcf4 ${summary.debug?.candidateCount || 0}\uac1c \ubd84\uc11d`,
+    `\ud604\uc7ac \uae30\uc900 ${summary.currentDate || '-'}`
+  ];
+
+  return `
+    <div class="longitudinal-panel">
+      <div class="longitudinal-panel-header">
+        <div class="longitudinal-panel-title">\u0032\ub2e8\uacc4 \ud575\uc2ec \ud658\uc790 \uc694\uc57d</div>
+        <div class="longitudinal-panel-subtitle">n\uc77c\uce58 \ud658\uc790 \ub370\uc774\ud130\ub97c \uc555\ucd95\ud574 \ud604\uc7ac \ubc30\uacbd, \uc9c0\uc18d \ubb38\uc81c, \ub2e4\uc74c \uadfc\ubb34\uc870 \uc778\uacc4 \ucc45\uc784\uc744 \uba3c\uc800 \ubcf4\uc5ec\uc90d\ub2c8\ub2e4.</div>
+      </div>
+      <div class="longitudinal-panel-body">
+        <div class="longitudinal-chip-row">
+          ${chipItems.map((item) => `<span class="longitudinal-chip">${escapeHtml(item)}</span>`).join('')}
+        </div>
+        <div class="longitudinal-concise">${escapeHtml(summary.conciseSummary || '\uc694\uc57d \uc815\ubcf4 \uc5c6\uc74c')}</div>
+        <div class="longitudinal-groups">
+          ${renderLongitudinalSummaryGroup('\ud658\uc790 \uc815\uccb4\uc131', '\uc774 \ud658\uc790\uac00 \uc5b4\ub5a4 \ud658\uc790\uc778\uc9c0 \ud30c\uc545\ud558\ub294 \uc601\uc5ed', summary.sections.identity, '\uc815\uccb4\uc131 \uc694\uc57d \uc815\ubcf4 \uc5c6\uc74c')}
+          ${renderLongitudinalSummaryGroup('\ud604\uc7ac \uad00\ub9ac \ud2c0', '\ud604\uc7ac \uc720\uc9c0 \uc911\uc778 \uad00\ub9ac \uc870\uac74\uacfc \uc8fc\uc758\uc0ac\ud56d', summary.sections.careFrame, '\ud604\uc7ac \uad00\ub9ac \ud2c0 \uc815\ubcf4 \uc5c6\uc74c')}
+          ${renderLongitudinalSummaryGroup('\uc9c0\uc18d \ud575\uc2ec \ubb38\uc81c', '\uae30\uac04 \uc804\uccb4\uc5d0\uc11c \ub0a8\uc544 \uc788\ub294 \ud575\uc2ec \ubb38\uc81c', summary.sections.persistentConcerns, '\uc9c0\uc18d \ud575\uc2ec \ubb38\uc81c \uc5c6\uc74c')}
+          ${renderLongitudinalSummaryGroup('\uc9d1\uc911 \uad00\ucc30', '\uc774\ubc88 \uadfc\ubb34\uc870\uac00 \ub354 \uc8fc\uc758\ud574\uc11c \ubcfc \ud56d\ubaa9', summary.sections.watchItems, '\uc9d1\uc911 \uad00\ucc30 \ud56d\ubaa9 \uc5c6\uc74c')}
+          ${renderLongitudinalSummaryGroup('\uc9c0\uc18d \uc778\uacc4 \ucc45\uc784', '\ub2e4\uc74c \uadfc\ubb34\uc870\uac00 \uc774\uc5b4\ubc1b\uc544\uc57c \ud560 \ucc45\uc784', summary.sections.carryoverItems, '\uc9c0\uc18d \uc778\uacc4 \ucc45\uc784 \uc5c6\uc74c')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderLongitudinalSummaryGroup(title, description, items, emptyText) {
+  const body = items && items.length
+    ? items.map((item) => renderLongitudinalSummaryItem(item)).join('')
+    : `<div class="longitudinal-empty">${escapeHtml(emptyText)}</div>`;
+
+  return `
+    <section class="longitudinal-group">
+      <div class="longitudinal-group-header">
+        <div class="longitudinal-group-title">${escapeHtml(title)}</div>
+        <div class="longitudinal-group-description">${escapeHtml(description)}</div>
+      </div>
+      <div class="longitudinal-group-body">${body}</div>
+    </section>
+  `;
+}
+
+function renderLongitudinalSummaryItem(item) {
+  const evidence = (item.evidence || []).slice(0, 4).join(', ');
+  const sourceDates = (item.sourceDates || []).join(', ');
+  const reasoning = (item.reasoning || []).join(' / ');
+  const score = Number.isFinite(Number(item.score)) ? Number(item.score) : 0;
+
+  return `
+    <article class="longitudinal-item">
+      <div class="longitudinal-item-top">
+        <div class="longitudinal-item-summary">${escapeHtml(item.summary || '-')}</div>
+        <span class="longitudinal-band ${longitudinalBandClass(item.importanceBand)}">${escapeHtml(longitudinalBandLabel(item.importanceBand))} / ${score}\uc810</span>
+      </div>
+      ${item.detail ? `<div class="longitudinal-item-detail">${escapeHtml(item.detail)}</div>` : ''}
+      <details class="longitudinal-item-details">
+        <summary>\ud310\ub2e8 \uadfc\uac70 \ubcf4\uae30</summary>
+        <div class="longitudinal-item-meta"><b>\uadfc\uac70:</b> ${escapeHtml(evidence || 'evidence \ubd80\uc871')}</div>
+        <div class="longitudinal-item-meta"><b>\uad00\ucc30 \ub0a0\uc9dc:</b> ${escapeHtml(sourceDates || '-')}</div>
+        <div class="longitudinal-item-meta"><b>\uc810\uc218 \ubd84\ud574:</b> ${escapeHtml(reasoning || '-')}</div>
+      </details>
+    </article>
+  `;
+}
+
+function longitudinalBandClass(band) {
+  const map = {
+    core: 'core',
+    focus: 'focus',
+    supporting: 'supporting',
+    background: 'background'
+  };
+  return map[band] || 'background';
+}
+
+function longitudinalBandLabel(band) {
+  const map = {
+    core: '\ud575\uc2ec',
+    focus: '\uc9d1\uc911',
+    supporting: '\ubcf4\uc870',
+    background: '\ubc30\uacbd'
+  };
+  return map[band] || '\ubc30\uacbd';
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function generateNarrativeSBAR(p, startData, endData, dates) {
+  const analysis = buildHandoffAnalysis(p, dates);
+  const historyList = (endData.pastHistory || []).join(', ');
+  const historyHTML = historyList
+    ? `<div style="margin-bottom:4px; color:#424242; font-size:11px;"><b>\uc911\uc694 \uacfc\uac70\ub825</b> ${escapeHtml(historyList)}</div>`
+    : '';
+  const longitudinalSummaryHTML = renderLongitudinalSummaryPanel(analysis.longitudinalSummary);
+  const situationItems = analysis.sbarPayload.situation.length
+    ? renderHandoffBulletList(analysis.sbarPayload.situation)
+    : `<div style="color:#666;">\uc911\ub300\ud55c \uc0c1\ud0dc\ubcc0\ud654\ub294 \ud655\uc778\ub418\uc9c0 \uc54a\uc558\uc2b5\ub2c8\ub2e4.</div>`;
+  const backgroundCards = analysis.sbarPayload.background.length
+    ? analysis.sbarPayload.background.map((item) => renderBackgroundCard(item)).join('')
+    : `<div style="padding:5px; color:#666;">\uc120\ud0dd \uae30\uac04 \ub3d9\uc548 \ud575\uc2ec \ubc30\uacbd \ubcc0\ud654\uac00 \ud655\uc778\ub418\uc9c0 \uc54a\uc558\uc2b5\ub2c8\ub2e4.</div>`;
+  const assessmentItems = analysis.sbarPayload.assessment.length
+    ? renderAssessmentList(analysis.sbarPayload.assessment)
+    : `<div style="color:#666;">\uc989\uc2dc \uc6b0\uc120\uc21c\uc704\ub85c \ubd84\ub958\ub41c \ubb38\uc81c\ub294 \uc5c6\uc2b5\ub2c8\ub2e4.</div>`;
+  const recommendationItems = analysis.sbarPayload.recommendation.length
+    ? renderHandoffBulletList(analysis.sbarPayload.recommendation)
+    : `<div style="color:#666;">\ud604\uc7ac \uacc4\ud68d \uc720\uc9c0 \ubc0f routine monitoring \uad8c\uc7a5.</div>`;
+
+  const assessmentHTML = `
+    ${assessmentItems}
+    <div style="display:flex; flex-direction:column; gap:10px; margin-top:12px;">
+      <button class="sbar-link-btn" onclick="openLabModal('${p.id}', 'Hematology')">
+        \uc8fc\uc694 \uac80\uc0ac \uacb0\uacfc \uc790\uc138\ud788 \ubcf4\uae30
+      </button>
+      <button class="sbar-link-btn" onclick="alert('PACS Viewer: ${endData.specials && endData.specials.length > 0 ? endData.specials[0] : '\uc5f0\uacb0\ub41c \uc601\uc0c1 \uc815\ubcf4 \uc5c6\uc74c'}')">
+        \uc601\uc0c1 / \ud2b9\uc218 \uac80\uc0ac \ubcf4\uae30
+      </button>
+      <button class="sbar-link-btn" onclick="alert('\ud611\uc9c4: ${endData.consults ? endData.consults : '\uc815\ubcf4 \uc5c6\uc74c'}')">
+        \ud611\uc9c4 \uc694\uccad \ud604\ud669 \ubcf4\uae30
+      </button>
+    </div>
+  `;
+
+  return `
+    ${longitudinalSummaryHTML}
+    <div class="sbar-section">
+      <div class="sbar-header situation">S - Situation</div>
+      <div class="sbar-body">
+        <div style="margin-bottom:4px;"><b>\ud604\uc7ac \uac04\ud638 \ucd08\uc810:</b> ${escapeHtml(endData.nursingProblem || '-')}</div>
+        <div style="margin-bottom:4px;"><b>\uc785\uc6d0 \ubc30\uacbd:</b> ${escapeHtml(normalizeNarrativeText(p.admissionNote || p.admitReason || '-'))}</div>
+        ${historyHTML}
+        <div style="margin-bottom:8px;"><b>\ud604\uc7ac \ud65c\ub825:</b> BP ${escapeHtml(endData.vital.bp)}, HR ${escapeHtml(String(endData.vital.hr))}, BT ${escapeHtml(String(endData.vital.bt))}, SpO2 ${escapeHtml(String(endData.vital.spo2))}%</div>
+        ${situationItems}
+      </div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-header background">B - Background</div>
+      <div class="sbar-body">${backgroundCards}</div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-header assessment">A - Assessment</div>
+      <div class="sbar-body">${assessmentHTML}</div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-header recommendation">R - Recommendation</div>
+      <div class="sbar-body">
+        ${recommendationItems}
+        ${renderRoutineOrderLink(endData, dates)}
+      </div>
+    </div>
+  `;
+}
+
+if (window.handoffAppApi) {
+  window.handoffAppApi.buildNormalizedDailyTimeline = buildNormalizedDailyTimeline;
+  window.handoffAppApi.buildLongitudinalPatientSummary = buildLongitudinalPatientSummary;
+  window.handoffAppApi.buildHandoffAnalysis = buildHandoffAnalysis;
+  window.handoffAppApi.generateNarrativeSBAR = generateNarrativeSBAR;
 }
 
 const LONGITUDINAL_SUMMARY_POLICY = {

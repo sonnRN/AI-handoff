@@ -324,6 +324,15 @@ function main() {
   assert.deepStrictEqual(placeholderTimeline[0].clinicalStatus.diagnoses, []);
   assert(placeholderSummary.overview.persistentConcerns.length === 0);
 
+  const emrHtml = api.generateNarrativeSBAR(
+    patient,
+    patient.dailyData['2026-03-16'],
+    patient.dailyData['2026-03-16'],
+    dates
+  );
+  assert(/class="longitudinal-panel"/.test(emrHtml));
+  assert(/class="longitudinal-group"/.test(emrHtml));
+
   console.log('Stage 2 summary regression test passed.');
 }
 
