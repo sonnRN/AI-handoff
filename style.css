@@ -375,6 +375,13 @@ textarea {
   overflow-y: auto;
 }
 
+.admit-reason-full {
+  white-space: normal;
+  word-break: keep-all;
+  overflow: visible;
+  line-height: 1.7;
+}
+
 .schedule-table {
   width: 100%;
   border-collapse: collapse;
@@ -2360,6 +2367,7 @@ textarea {
   background: #e3f2fd;
   padding: 10px 15px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   border-bottom: 1px solid #bbdefb;
@@ -2385,6 +2393,20 @@ textarea {
 
 .ai-range-selector button:hover {
   background: #1565c0;
+}
+
+.ai-range-meta {
+  padding: 10px 15px 6px;
+  border-bottom: 1px solid #e3eefb;
+  background: #f7fbff;
+  color: #29434e;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.ai-range-meta-days {
+  color: #1565c0;
+  font-weight: bold;
 }
 
 /* ===== AI 패널 탭 ===== */

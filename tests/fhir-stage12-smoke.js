@@ -97,10 +97,12 @@ async function fetchSamplePatient(patientId) {
 function loadEngineApi() {
   const scriptContent = fs.readFileSync(path.join(ROOT, 'script.js'), 'utf8');
   const overrideContent = fs.readFileSync(path.join(ROOT, 'stage2-overrides.js'), 'utf8');
+  const periodOverrideContent = fs.readFileSync(path.join(ROOT, 'stage2-period-overrides.js'), 'utf8');
   const sandbox = createEngineSandbox();
   vm.createContext(sandbox);
   vm.runInContext(scriptContent, sandbox, { filename: 'script.js' });
   vm.runInContext(overrideContent, sandbox, { filename: 'stage2-overrides.js' });
+  vm.runInContext(periodOverrideContent, sandbox, { filename: 'stage2-period-overrides.js' });
   return sandbox.window.handoffAppApi;
 }
 

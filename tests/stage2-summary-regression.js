@@ -8,6 +8,7 @@ const ROOT = path.resolve(__dirname, '..');
 function createEngineApi() {
   const scriptContent = fs.readFileSync(path.join(ROOT, 'script.js'), 'utf8');
   const overrideContent = fs.readFileSync(path.join(ROOT, 'stage2-overrides.js'), 'utf8');
+  const periodOverrideContent = fs.readFileSync(path.join(ROOT, 'stage2-period-overrides.js'), 'utf8');
   const noop = () => {};
   const elementStub = {
     addEventListener: noop,
@@ -69,6 +70,7 @@ function createEngineApi() {
   vm.createContext(sandbox);
   vm.runInContext(scriptContent, sandbox, { filename: 'script.js' });
   vm.runInContext(overrideContent, sandbox, { filename: 'stage2-overrides.js' });
+  vm.runInContext(periodOverrideContent, sandbox, { filename: 'stage2-period-overrides.js' });
   return sandbox.window.handoffAppApi;
 }
 
@@ -461,6 +463,71 @@ function buildWatchLinkPatient() {
   };
 }
 
+function buildSelectedRangePatient() {
+  return {
+    id: 'selected-range-patient',
+    name: 'Selected Range Patient',
+    gender: 'M',
+    age: '67',
+    room: '710-1',
+    diagnosis: 'Cerebral Infarction',
+    admitDate: '2026-03-10',
+    admissionNote: 'Sudden right sided weakness, MRI confirmed acute infarction, admitted for neuro monitoring.',
+    pastHistory: ['Hypertension'],
+    dailyData: {
+      '2026-03-10': {
+        nursingProblem: '#1. Self-care deficit',
+        vital: { bp: '148/84', hr: 98, bt: 36.9, rr: 18, spo2: 97 },
+        labs: {},
+        specials: ['Brain MRI: acute infarction at left MCA territory'],
+        nursingTasks: [],
+        plan: [],
+        handoffMeta: {
+          clinicalStatus: {
+            diagnoses: ['Cerebral Infarction'],
+            isolation: '-',
+            activity: 'Absolute bed rest',
+            caution: ['Fall risk'],
+            lines: ['Peripheral IV'],
+            tubes: [],
+            drains: [],
+            vent: []
+          },
+          orders: { active: [], routine: [], prn: [], medications: { inj: [], po: [], running: [] } },
+          vitals: { latest: { bp: '148/84', hr: 98, bt: 36.9, rr: 18, spo2: 97 }, abnormalFlags: [] },
+          labs: { latest: {}, abnormal: [] },
+          nursingActions: { completed: [], pending: [], followUp: [] },
+          sourceRefs: {}
+        }
+      },
+      '2026-03-16': {
+        nursingProblem: '#1. Self-care deficit',
+        vital: { bp: '132/76', hr: 86, bt: 36.7, rr: 18, spo2: 98 },
+        labs: {},
+        nursingTasks: [],
+        plan: [],
+        handoffMeta: {
+          clinicalStatus: {
+            diagnoses: ['Cerebral Infarction'],
+            isolation: '-',
+            activity: 'Assist ambulation with walker',
+            caution: ['Fall risk'],
+            lines: ['Peripheral IV'],
+            tubes: [],
+            drains: [],
+            vent: []
+          },
+          orders: { active: [], routine: [], prn: [], medications: { inj: [], po: [], running: [] } },
+          vitals: { latest: { bp: '132/76', hr: 86, bt: 36.7, rr: 18, spo2: 98 }, abnormalFlags: [] },
+          labs: { latest: {}, abnormal: [] },
+          nursingActions: { completed: [], pending: ['Recheck gait safety'], followUp: ['Recheck gait safety'] },
+          sourceRefs: {}
+        }
+      }
+    }
+  };
+}
+
 function main() {
   const api = createEngineApi();
   const patient = buildSyntheticPatient();
@@ -530,6 +597,18 @@ function main() {
   assert(!/점수 분해/.test(emrHtml));
   assert(!/>\s*\d+점\s*</.test(emrHtml));
   assert(/V\/S 시트 보기|Lab 보기/.test(watchHtml));
+
+  const selectedRangePatient = buildSelectedRangePatient();
+  const scopedAnalysis = api.buildHandoffAnalysis(selectedRangePatient, ['2026-03-16']);
+  const realtimeContext = api.getRealtimeDateContext(selectedRangePatient);
+
+  assert.strictEqual(realtimeContext.displayByRaw['2026-03-16'], api.getKoreanNowParts().date);
+  assert(scopedAnalysis.longitudinalSummary.sections.identity.some((item) => /Cerebral Infarction/i.test(item.summary)));
+  assert(scopedAnalysis.longitudinalSummary.sections.careFrame.some((item) => /walker|Assist ambulation/i.test(item.summary)));
+  assert(scopedAnalysis.longitudinalSummary.sections.careFrame.every((item) => !/Absolute bed rest/i.test(item.summary)));
+  assert.strictEqual(scopedAnalysis.longitudinalSummary.selectedDayCount, 1);
+  assert(/\d{4}-\d{2}-\d{2}/.test(scopedAnalysis.longitudinalSummary.fullStayRange.start));
+  assert(/\d{4}-\d{2}-\d{2}/.test(scopedAnalysis.longitudinalSummary.displayDateRange.end));
 
   console.log('Stage 2 summary regression test passed.');
 }

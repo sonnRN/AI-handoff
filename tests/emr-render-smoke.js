@@ -72,10 +72,12 @@ function createEngineSandbox() {
 function loadEngineApi() {
   const scriptContent = fs.readFileSync(path.join(ROOT, 'script.js'), 'utf8');
   const overrideContent = fs.readFileSync(path.join(ROOT, 'stage2-overrides.js'), 'utf8');
+  const periodOverrideContent = fs.readFileSync(path.join(ROOT, 'stage2-period-overrides.js'), 'utf8');
   const sandbox = createEngineSandbox();
   vm.createContext(sandbox);
   vm.runInContext(scriptContent, sandbox, { filename: 'script.js' });
   vm.runInContext(overrideContent, sandbox, { filename: 'stage2-overrides.js' });
+  vm.runInContext(periodOverrideContent, sandbox, { filename: 'stage2-period-overrides.js' });
   return sandbox.window.handoffAppApi;
 }
 
@@ -98,6 +100,8 @@ async function main() {
   const html = api.generateNarrativeSBAR(detail, startData, endData, dates);
 
   assert(/class="longitudinal-panel"/.test(html));
+  assert(/선택 분석기간/.test(html));
+  assert(/전체 재원기간/.test(html));
   assert(/S - Situation/.test(html));
   assert(/B - Background/.test(html));
   assert(/A - Assessment/.test(html));
