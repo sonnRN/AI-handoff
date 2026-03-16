@@ -71,9 +71,11 @@ function createEngineSandbox() {
 
 function loadEngineApi() {
   const scriptContent = fs.readFileSync(path.join(ROOT, 'script.js'), 'utf8');
+  const overrideContent = fs.readFileSync(path.join(ROOT, 'stage2-overrides.js'), 'utf8');
   const sandbox = createEngineSandbox();
   vm.createContext(sandbox);
   vm.runInContext(scriptContent, sandbox, { filename: 'script.js' });
+  vm.runInContext(overrideContent, sandbox, { filename: 'stage2-overrides.js' });
   return sandbox.window.handoffAppApi;
 }
 

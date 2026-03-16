@@ -1932,10 +1932,16 @@ function normalizeDailySnapshot(patient, date, data) {
   const patientHistory = unique([...(data.pastHistory || []), ...(patient.pastHistory || [])]);
   const activeDevices = unique([...lineItems, ...tubeItems, ...drainItems]);
   const activityValue = normalizeActivityValue(meta.clinicalStatus?.activity || data.activity || "-");
+  const cautionItems = unique([...(meta.clinicalStatus?.caution || []), ...(patient.caution ? [patient.caution] : [])])
+    .map((item) => normalizeClinicalPlaceholderText(item))
+    .filter((item) => item && item !== '-');
   const nursingProblem = extractCoreNursingProblem(
     data.nursingProblem,
     meta.clinicalStatus?.diagnoses || [patient.diagnosis].filter(Boolean)
   );
+  const specialItems = toNormalizedTextList(data.specials || []);
+  const consultItems = toNormalizedTextList(data.consults || []);
+  const hourlyItems = Array.isArray(data.hourly) ? data.hourly : [];
 
   return {
     date,
@@ -1947,14 +1953,15 @@ function normalizeDailySnapshot(patient, date, data) {
       room: patient.room || "-",
       diagnosis: normalizeClinicalPlaceholderText(patient.diagnosis),
       admissionReason: normalizeNarrativeText(patient.admissionNote || patient.admitReason || "-"),
-      pastHistory: patientHistory
+      pastHistory: patientHistory,
+      diet: normalizeNarrativeText(patient.diet || data.diet || "-")
     },
     nursingProblem,
     clinicalStatus: {
       diagnoses: normalizeDiagnosisItems(meta.clinicalStatus?.diagnoses || [patient.diagnosis]),
       isolation: meta.clinicalStatus?.isolation || patient.isolation || "-",
       activity: activityValue,
-      caution: meta.clinicalStatus?.caution || [],
+      caution: cautionItems,
       lines: lineItems,
       tubes: tubeItems,
       drains: drainItems,
@@ -2013,12 +2020,17 @@ function normalizeDailySnapshot(patient, date, data) {
     summarySignals: {
       activeDevices,
       activeRisks: unique([
-        ...(meta.clinicalStatus?.caution || []),
+        ...cautionItems,
         ...abnormalFlags.map(vitalFlagLabel),
         ...abnormalLabs.slice(0, 3).map((item) => `${item.key} ${formatLabValue(String(item.value))}`)
       ])
     },
-    sourceRefs: meta.sourceRefs || {}
+    sourceRefs: meta.sourceRefs || {},
+    specials: specialItems,
+    consults: consultItems,
+    hourly: hourlyItems,
+    docOrders: data.docOrders || { routine: [], prn: [] },
+    medSchedule: data.medSchedule || []
   };
 }
 

@@ -7,6 +7,7 @@ const ROOT = path.resolve(__dirname, '..');
 
 function createEngineApi() {
   const scriptContent = fs.readFileSync(path.join(ROOT, 'script.js'), 'utf8');
+  const overrideContent = fs.readFileSync(path.join(ROOT, 'stage2-overrides.js'), 'utf8');
   const noop = () => {};
   const elementStub = {
     addEventListener: noop,
@@ -67,6 +68,7 @@ function createEngineApi() {
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(scriptContent, sandbox, { filename: 'script.js' });
+  vm.runInContext(overrideContent, sandbox, { filename: 'stage2-overrides.js' });
   return sandbox.window.handoffAppApi;
 }
 
@@ -287,6 +289,178 @@ function buildPlaceholderNoisePatient() {
   };
 }
 
+function buildStrokeIdentityPatient() {
+  return {
+    id: 'stroke-identity-patient',
+    name: '뇌경색 테스트 환자',
+    gender: 'M',
+    age: '68',
+    room: '515-3',
+    diagnosis: 'Cerebral Infraction',
+    admissionNote: '금일 오전 편측 위약감과 구음장애로 내원하였고 Brain MRI상 Rt. MCA acute infarction 소견 확인됨. tPA 투여 후 경과 관찰 중.',
+    pastHistory: ['Hypertension'],
+    dailyData: {
+      '2026-03-16': {
+        nursingProblem: '#1. 자가간호결핍',
+        vital: { bp: '136/78', hr: 96, bt: 36.8, rr: 18, spo2: 97 },
+        labs: {},
+        nursingTasks: [],
+        plan: [],
+        specials: ['Brain MRI: Acute infarction extension at Rt. MCA'],
+        handoffMeta: {
+          clinicalStatus: {
+            diagnoses: ['Cerebral Infraction'],
+            isolation: '-',
+            activity: 'Bed rest',
+            caution: ['낙상고위험'],
+            lines: ['Peripheral IV'],
+            tubes: ['L-tube'],
+            drains: [],
+            vent: []
+          },
+          orders: {
+            active: [],
+            routine: [],
+            prn: [],
+            medications: { inj: [], po: [], running: [] }
+          },
+          vitals: {
+            latest: { bp: '136/78', hr: 96, bt: 36.8, rr: 18, spo2: 97 },
+            abnormalFlags: []
+          },
+          labs: {
+            latest: {},
+            abnormal: []
+          },
+          nursingActions: {
+            completed: [],
+            pending: ['낙상 예방 확인'],
+            followUp: ['낙상 예방 확인']
+          },
+          sourceRefs: {}
+        }
+      }
+    }
+  };
+}
+
+function buildSelfCareDeficitPatient() {
+  return {
+    id: 'self-care-deficit-patient',
+    name: '자가간호결핍 테스트 환자',
+    gender: 'F',
+    age: '72',
+    room: '520-2',
+    diagnosis: 'Stroke',
+    diet: 'L-tube Feeding',
+    admissionNote: '좌측 위약감으로 이동과 일상생활 수행에 도움이 필요한 상태로 입원함.',
+    pastHistory: [],
+    dailyData: {
+      '2026-03-16': {
+        nursingProblem: '#1. 자가간호결핍',
+        vital: { bp: '128/74', hr: 88, bt: 36.7, rr: 18, spo2: 98 },
+        labs: {},
+        nursingTasks: [],
+        plan: [],
+        handoffMeta: {
+          clinicalStatus: {
+            diagnoses: ['Stroke'],
+            isolation: '-',
+            activity: 'Bed rest, assist with transfer',
+            caution: ['낙상주의'],
+            lines: ['Peripheral IV'],
+            tubes: ['L-tube'],
+            drains: [],
+            vent: []
+          },
+          orders: {
+            active: [],
+            routine: [],
+            prn: [],
+            medications: { inj: [], po: [], running: [] }
+          },
+          vitals: {
+            latest: { bp: '128/74', hr: 88, bt: 36.7, rr: 18, spo2: 98 },
+            abnormalFlags: []
+          },
+          labs: {
+            latest: {},
+            abnormal: []
+          },
+          nursingActions: {
+            completed: [],
+            pending: [],
+            followUp: []
+          },
+          sourceRefs: {}
+        }
+      }
+    }
+  };
+}
+
+function buildWatchLinkPatient() {
+  return {
+    id: 'watch-link-patient',
+    name: '관찰 링크 테스트 환자',
+    gender: 'M',
+    age: '54',
+    room: '601-1',
+    diagnosis: 'Sepsis',
+    admissionNote: '빈맥과 발열로 입원하여 혈액검사 추적 중.',
+    pastHistory: [],
+    dailyData: {
+      '2026-03-16': {
+        nursingProblem: '#1. 감염위험성',
+        vital: { bp: '92/58', hr: 132, bt: 38.6, rr: 24, spo2: 93 },
+        labs: {
+          Chemistry: { K: '5.8', CRP: '8.2' }
+        },
+        hourly: [
+          { time: '08:00', vital: { bp: '92/58', hr: 132, bt: 38.6, rr: 24, spo2: 93 }, notes: ['빈맥 지속'] }
+        ],
+        nursingTasks: [],
+        plan: [],
+        handoffMeta: {
+          clinicalStatus: {
+            diagnoses: ['Sepsis'],
+            isolation: '-',
+            activity: 'Bed rest',
+            caution: [],
+            lines: ['Peripheral IV'],
+            tubes: [],
+            drains: [],
+            vent: []
+          },
+          orders: {
+            active: [],
+            routine: [],
+            prn: [],
+            medications: { inj: [], po: [], running: [] }
+          },
+          vitals: {
+            latest: { bp: '92/58', hr: 132, bt: 38.6, rr: 24, spo2: 93 },
+            abnormalFlags: ['bp', 'hr', 'bt', 'rr']
+          },
+          labs: {
+            latest: { K: '5.8', CRP: '8.2' },
+            abnormal: [
+              { key: 'K', value: '5.8', status: 'high' },
+              { key: 'CRP', value: '8.2', status: 'high' }
+            ]
+          },
+          nursingActions: {
+            completed: [],
+            pending: [],
+            followUp: []
+          },
+          sourceRefs: {}
+        }
+      }
+    }
+  };
+}
+
 function main() {
   const api = createEngineApi();
   const patient = buildSyntheticPatient();
@@ -324,6 +498,27 @@ function main() {
   assert.deepStrictEqual(placeholderTimeline[0].clinicalStatus.diagnoses, []);
   assert(placeholderSummary.overview.persistentConcerns.length === 0);
 
+  const strokeIdentityPatient = buildStrokeIdentityPatient();
+  const strokeTimeline = api.buildNormalizedDailyTimeline(strokeIdentityPatient, Object.keys(strokeIdentityPatient.dailyData).sort());
+  const strokeSummary = api.buildLongitudinalPatientSummary(strokeIdentityPatient, strokeTimeline);
+  assert(/주진단/.test(strokeSummary.sections.identity[0].summary));
+  assert(strokeSummary.sections.identity[0].clinicalBasis.some((item) => /MRI|위약감|구음장애/i.test(item)));
+
+  const selfCarePatient = buildSelfCareDeficitPatient();
+  const selfCareTimeline = api.buildNormalizedDailyTimeline(selfCarePatient, Object.keys(selfCarePatient.dailyData).sort());
+  const selfCareSummary = api.buildLongitudinalPatientSummary(selfCarePatient, selfCareTimeline);
+  assert(selfCareSummary.sections.persistentConcerns.some((item) => /NANDA 간호진단: 자가간호결핍/.test(item.summary)));
+  assert(selfCareSummary.sections.persistentConcerns[0].clinicalBasis.some((item) => /활동 제한|보조 장치|식이/i.test(item)));
+
+  const watchLinkPatient = buildWatchLinkPatient();
+  const watchDates = Object.keys(watchLinkPatient.dailyData).sort();
+  const watchHtml = api.generateNarrativeSBAR(
+    watchLinkPatient,
+    watchLinkPatient.dailyData[watchDates[0]],
+    watchLinkPatient.dailyData[watchDates[0]],
+    watchDates
+  );
+
   const emrHtml = api.generateNarrativeSBAR(
     patient,
     patient.dailyData['2026-03-16'],
@@ -332,6 +527,9 @@ function main() {
   );
   assert(/class="longitudinal-panel"/.test(emrHtml));
   assert(/class="longitudinal-group"/.test(emrHtml));
+  assert(!/점수 분해/.test(emrHtml));
+  assert(!/>\s*\d+점\s*</.test(emrHtml));
+  assert(/V\/S 시트 보기|Lab 보기/.test(watchHtml));
 
   console.log('Stage 2 summary regression test passed.');
 }
