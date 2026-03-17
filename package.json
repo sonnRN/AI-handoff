@@ -1,0 +1,13 @@
+{
+  "name": "emr-demo-harness",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "node scripts/run-node-tests.js",
+    "test:stage2": "node tests/stage2-summary-regression.js",
+    "test:fhir:smoke": "node tests/fhir-stage12-smoke.js",
+    "test:fhir:batch": "node tests/fhir-stage12-batch.js 5",
+    "test:render": "node tests/emr-render-smoke.js"
+  }
+}
