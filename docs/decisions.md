@@ -33,3 +33,7 @@ Lint and formatter tooling are useful, but the repository does not yet have a st
 ### Prepare the repository for synthetic-only public release
 
 The public repository should not expose realistic patient-like identities or ambiguous demo data. Local demo patients were relabeled as clearly synthetic, and public synthetic FHIR identities are converted to synthetic aliases before display.
+
+### Use department-based clinical profiles for stage 3+ prioritization
+
+Stage 3 and later handoff analysis now applies department-based profiles instead of broad ward labels. The canonical engine recognizes `medical_ward`, `surgical_ward`, `neurology_ward`, `oncology_ward`, `medical_icu`, and `surgical_icu`, while explicitly excluding emergency and operating-room workflows from the current scope. These profiles adjust tier promotion and explainability without changing the source-agnostic normalized snapshot contract.

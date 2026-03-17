@@ -110,17 +110,25 @@ function main() {
   const metadata = api.getHandoffEngineMetadata();
   assert.strictEqual(metadata.contract, "handoff-engine-v1");
   assert.strictEqual(api.engineContract, "handoff-engine-v1");
+  assert.ok(Array.isArray(metadata.departmentProfiles));
+  assert.ok(metadata.departmentProfiles.some((profile) => profile.id === "neurology_ward"));
+  assert.ok(metadata.departmentProfiles.some((profile) => profile.id === "surgical_icu"));
+  assert.ok(Array.isArray(metadata.excludedDepartments));
+  assert.ok(metadata.excludedDepartments.includes("emergency"));
 
   const analysis = api.buildHandoffAnalysis(patient, dates);
   assert.strictEqual(analysis.engineContract, "handoff-engine-v1");
   assert.ok(analysis.verificationResult);
   assert.ok(Array.isArray(analysis.actionNeededItems));
   assert.ok(analysis.groupedLowerPrioritySummary);
+  assert.ok(analysis.departmentProfileUsed);
+  assert.strictEqual(analysis.departmentProfileUsed.id, "neurology_ward");
 
   const topItem = analysis.prioritizedHandoffItems[0];
   assert.ok(topItem.priorityTierLabel);
   assert.ok(Array.isArray(topItem.priorityReasons));
   assert.ok(topItem.verification);
+  assert.ok(topItem.departmentProfile);
 
   const heparinItem = analysis.prioritizedHandoffItems.find((item) => /Heparin/i.test(item.summary));
   assert.ok(heparinItem, "High-risk medication change should be prioritized");
@@ -140,6 +148,23 @@ function main() {
   ], {});
   assert.strictEqual(rankedUnsupported.length, 0, "Unsupported top-tier items should be withheld");
 
+  const surgicalIcuRanked = api.rankHandoffItems([
+    {
+      type: "nursing_action",
+      date: "2026-03-16",
+      summary: "Post-op Hemovac output recheck",
+      detail: "Pending drain output follow-up after surgery",
+      evidence: ["Hemovac 120 mL, postoperative day 1"],
+      priorityBand: "moderate",
+      sbarSection: "recommendation"
+    }
+  ], {
+    departmentProfile: metadata.departmentProfiles.find((profile) => profile.id === "surgical_icu")
+  });
+  assert.strictEqual(surgicalIcuRanked.length, 1);
+  assert.strictEqual(surgicalIcuRanked[0].departmentProfile.id, "surgical_icu");
+  assert.ok(surgicalIcuRanked[0].priorityTier <= 1, "Surgical ICU drain follow-up should be promoted");
+
   const html = api.generateNarrativeSBAR(
     patient,
     patient.dailyData[dates[0]],
@@ -147,6 +172,7 @@ function main() {
     dates
   );
   assert(/engine-explainability-panel/.test(html));
+  assert(/신경계 병동/.test(html));
   assert(/즉시 보고|다음 근무조/.test(html));
 
   console.log("Canonical engine smoke test passed.");

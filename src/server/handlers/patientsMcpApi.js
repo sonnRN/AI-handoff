@@ -1,5 +1,5 @@
 const { getSharedFhirMcpClient } = require("../../mcp/client/fhirMcpClient");
-const { createPatientDataGateway, getSharedPatientDataGateway } = require("../../mcp/runtime/patientDataGateway");
+const { createPatientDataGateway } = require("../../mcp/runtime/patientDataGateway");
 const { createSyntheticFallbackHandler, isRemoteFhirDisabled } = require("../../mcp/runtime/syntheticFallbackHandler");
 const { BUILD_INFO } = require("../buildInfo");
 
@@ -82,7 +82,9 @@ async function getProvider() {
       prefetchPatients: async (args) => client.prefetchPatients(args)
     };
   } catch (error) {
-    const gateway = getSharedPatientDataGateway();
+    const gateway = createPatientDataGateway({
+      fallbackHandler: createSyntheticFallbackHandler()
+    });
     return {
       connectionMode: "direct-fallback",
       connectionReason: error.message,

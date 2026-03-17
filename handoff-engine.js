@@ -53,6 +53,51 @@
     3: "핵심 흐름은 아니지만 배경으로 유지할 항목"
   };
 
+  const DEPARTMENT_PROFILES = {
+    medical_ward: {
+      id: "medical_ward",
+      label: "내과계 병동",
+      description: "만성질환, 감염, 내과계 follow-up과 지속 관찰 중심 프로파일",
+      icu: false,
+      family: "medical"
+    },
+    surgical_ward: {
+      id: "surgical_ward",
+      label: "외과계 병동",
+      description: "수술 후 경과, 상처, 배액, 출혈, 금식/식이 전환 중심 프로파일",
+      icu: false,
+      family: "surgical"
+    },
+    neurology_ward: {
+      id: "neurology_ward",
+      label: "신경계 병동",
+      description: "의식, 운동/언어, 흡인 위험, 뇌졸중/신경학적 변화 중심 프로파일",
+      icu: false,
+      family: "neurology"
+    },
+    oncology_ward: {
+      id: "oncology_ward",
+      label: "종양계 병동",
+      description: "항암치료, 감염 위험, 혈액수치 변화, 통증·오심 관리 중심 프로파일",
+      icu: false,
+      family: "oncology"
+    },
+    medical_icu: {
+      id: "medical_icu",
+      label: "내과계 중환자실",
+      description: "호흡·순환 support, high-risk infusion, critical lab 중심 ICU 프로파일",
+      icu: true,
+      family: "medical"
+    },
+    surgical_icu: {
+      id: "surgical_icu",
+      label: "외과계 중환자실",
+      description: "수술 후 불안정 상태, drain/bleeding, ventilator, 집중 모니터링 중심 ICU 프로파일",
+      icu: true,
+      family: "surgical"
+    }
+  };
+
   const legacy = {
     buildNormalizedDailyTimeline:
       typeof root.buildNormalizedDailyTimeline === "function" ? root.buildNormalizedDailyTimeline : null,
@@ -144,7 +189,137 @@
     return /(report|notify|보고)/i.test(text);
   }
 
-  function classifyPriorityTier(item) {
+  function buildProfileText(patient, current) {
+    const meta = current?.handoffMeta || {};
+    const clinicalStatus = meta.clinicalStatus || {};
+    const orderText = [
+      ...(meta.orders?.active || []),
+      ...(meta.orders?.routine || []),
+      ...(meta.orders?.prn || []),
+      ...(meta.orders?.medications?.inj || []),
+      ...(meta.orders?.medications?.po || []),
+      ...(meta.orders?.medications?.running || [])
+    ].join(" ");
+
+    return compactText([
+      patient?.diagnosis,
+      patient?.admissionNote,
+      (patient?.pastHistory || []).join(" "),
+      (clinicalStatus.diagnoses || []).join(" "),
+      clinicalStatus.activity,
+      clinicalStatus.isolation,
+      (clinicalStatus.caution || []).join(" "),
+      (clinicalStatus.lines || []).join(" "),
+      (clinicalStatus.tubes || []).join(" "),
+      (clinicalStatus.drains || []).join(" "),
+      (clinicalStatus.vent || []).join(" "),
+      orderText,
+      current?.nursingProblem,
+      (current?.specials || []).join(" ")
+    ].join(" "));
+  }
+
+  function isSurgicalContext(text, current) {
+    const drainCount = ((current?.handoffMeta?.clinicalStatus?.drains || []).length);
+    return /(surgery|surgical|post[- ]?op|postoperative|laparotomy|colectomy|bowel|wound|drain|hemovac|jp drain|bleeding|anastomosis|npo|금식|배액|수술)/i.test(text) || drainCount > 0;
+  }
+
+  function isIcuContext(current, text) {
+    const roomText = compactText(`${current?.room || ""} ${current?.bed || ""} ${current?.location || ""} ${current?.unit || ""}`);
+    const lineCount = ((current?.handoffMeta?.clinicalStatus?.lines || []).length);
+    const tubeCount = ((current?.handoffMeta?.clinicalStatus?.tubes || []).length);
+    const drainCount = ((current?.handoffMeta?.clinicalStatus?.drains || []).length);
+    const runningCount = ((current?.handoffMeta?.orders?.medications?.running || []).length);
+    const supportSignals = /(icu|intensive care|ventilator|mechanical ventilation|arterial line|central line|cvc|vasopressor|ecmo|crrt|high flow|hfnc|bipap|intubation)/i.test(`${roomText} ${text}`);
+    const complexSupport = (lineCount + tubeCount + drainCount >= 3 && runningCount > 0) || (runningCount >= 2 && /(oxygen|o2|vent|infusion)/i.test(text));
+    return supportSignals || complexSupport;
+  }
+
+  function isNeurologyContext(text) {
+    return /(stroke|cva|infarction|intracranial|neuro|brain|seizure|aphasia|hemiplegia|aspiration risk|gcs|pupil|mental status|뇌|신경|흡인|의식|동공|편마비)/i.test(text);
+  }
+
+  function isOncologyContext(text) {
+    return /(cancer|carcinoma|tumor|neoplasm|lymphoma|leukemia|oncology|chemo|chemotherapy|cisplatin|doxorubicin|cyclophosphamide|neutropenia|항암|종양|암)/i.test(text);
+  }
+
+  function deriveDepartmentProfile(patient, timeline) {
+    const current = (timeline || [])[timeline.length - 1] || {};
+    const text = buildProfileText(patient, current);
+
+    if (isIcuContext(current, text)) {
+      return isSurgicalContext(text, current)
+        ? DEPARTMENT_PROFILES.surgical_icu
+        : DEPARTMENT_PROFILES.medical_icu;
+    }
+
+    if (isNeurologyContext(text)) return DEPARTMENT_PROFILES.neurology_ward;
+    if (isOncologyContext(text)) return DEPARTMENT_PROFILES.oncology_ward;
+    if (isSurgicalContext(text, current)) return DEPARTMENT_PROFILES.surgical_ward;
+    return DEPARTMENT_PROFILES.medical_ward;
+  }
+
+  function applyDepartmentTierAdjustment(item, tierInfo, departmentProfile) {
+    if (!departmentProfile) {
+      return { ...tierInfo, profileAdjusted: false, profileReasons: [] };
+    }
+
+    const text = compactText(`${item.summary || ""} ${item.detail || ""} ${(item.evidence || []).join(" ")}`);
+    const profileReasons = [];
+    let tier = tierInfo.tier;
+
+    if (departmentProfile.id === "medical_icu") {
+      if (item.type === "vital_abnormal" || item.type === "lab_change") {
+        tier = Math.min(tier, 1);
+        profileReasons.push("내과계 ICU는 활력과 검사 변화를 상위 인계로 승격");
+      }
+      if ((item.type === "status_change" || item.type === "new_order" || item.type === "discontinued_order") && /(oxygen|o2|vent|infusion|vasopressor|line|tube)/i.test(text)) {
+        tier = Math.min(tier, 1);
+        profileReasons.push("내과계 ICU support 변화는 즉시 follow-up이 필요");
+      }
+    } else if (departmentProfile.id === "surgical_icu") {
+      if ((item.type === "status_change" || item.type === "lab_change" || item.type === "vital_abnormal") && /(drain|bleeding|wound|post[- ]?op|hemovac|jp drain|수술|배액|출혈)/i.test(text)) {
+        tier = Math.min(tier, 1);
+        profileReasons.push("외과계 ICU는 수술 후 불안정 신호를 상위 인계로 승격");
+      }
+      if (item.type === "nursing_action" && /(drain|bleeding|wound|dressing|배액|드레싱)/i.test(text)) {
+        tier = Math.min(tier, 1);
+        profileReasons.push("외과계 ICU의 미완료 처치 확인은 다음 근무조 우선 업무");
+      }
+    } else if (departmentProfile.id === "neurology_ward") {
+      if ((item.type === "status_change" || item.type === "vital_abnormal" || item.type === "nursing_action") && /(stroke|cva|infarction|neuro|mental|gcs|pupil|motor|aphasia|aspiration|뇌|신경|의식|동공|운동|흡인)/i.test(text)) {
+        tier = Math.min(tier, 1);
+        profileReasons.push("신경계 병동은 신경학적 변화와 흡인 위험을 우선 인계");
+      }
+    } else if (departmentProfile.id === "oncology_ward") {
+      if ((item.type === "lab_change" || item.type === "new_order" || item.type === "discontinued_order" || item.type === "nursing_action") && /(chemo|chemotherapy|neutropenia|platelet|plt|wbc|fever|항암|호중구|혈소판|발열)/i.test(text)) {
+        tier = Math.min(tier, 1);
+        profileReasons.push("종양계 병동은 항암 및 감염/혈액수치 관련 변화를 우선 인계");
+      }
+    } else if (departmentProfile.id === "surgical_ward") {
+      if ((item.type === "status_change" || item.type === "nursing_action" || item.type === "lab_change") && /(post[- ]?op|drain|bleeding|wound|npo|pain|수술|배액|출혈|통증|금식)/i.test(text)) {
+        tier = Math.min(tier, 1);
+        profileReasons.push("외과계 병동은 수술 후 경과와 배액/상처 관찰을 우선 인계");
+      }
+    } else if (departmentProfile.id === "medical_ward") {
+      if ((item.type === "lab_change" || item.type === "nursing_action") && /(infection|sepsis|electrolyte|glucose|dialysis|감염|패혈|전해질|혈당)/i.test(text)) {
+        tier = Math.min(tier, 2);
+        profileReasons.push("내과계 병동은 감염·전해질·지속 follow-up 이슈를 추적 인계");
+      }
+    }
+
+    return {
+      ...tierInfo,
+      tier,
+      label: PRIORITY_TIER_LABELS[tier],
+      description: PRIORITY_TIER_DESCRIPTIONS[tier],
+      profileAdjusted: tier !== tierInfo.tier || profileReasons.length > 0,
+      profileReasons,
+      departmentProfile
+    };
+  }
+
+  function classifyPriorityTier(item, departmentProfile) {
     const text = compactText(`${item.summary || ""} ${item.detail || ""} ${(item.evidence || []).join(" ")}`);
     const immediateRisk = detectImmediateRisk(item, text);
     const timeSensitive = detectTimeSensitiveAction(item, text);
@@ -161,7 +336,7 @@
       tier = 2;
     }
 
-    return {
+    return applyDepartmentTierAdjustment(item, {
       tier,
       label: PRIORITY_TIER_LABELS[tier],
       description: PRIORITY_TIER_DESCRIPTIONS[tier],
@@ -172,11 +347,13 @@
         highRiskMedication,
         needsReport
       }
-    };
+    }, departmentProfile);
   }
 
   function buildPriorityReasons(item, tierInfo) {
     const reasons = [];
+    if (tierInfo.departmentProfile?.label) reasons.push(`${tierInfo.departmentProfile.label} 기준 반영`);
+    if (Array.isArray(tierInfo.profileReasons) && tierInfo.profileReasons.length) reasons.push(tierInfo.profileReasons[0]);
     if (tierInfo.flags.immediateRisk) reasons.push("즉시 안전 위험");
     if (tierInfo.flags.timeSensitive) reasons.push("다음 근무조 시간 민감 행동");
     if (tierInfo.flags.carryover) reasons.push("지속 인계 책임");
@@ -188,6 +365,13 @@
   }
 
   function buildActionRelevance(item, tierInfo) {
+    const profilePrefix = tierInfo.departmentProfile?.label
+      ? `${tierInfo.departmentProfile.label} 기준으로 `
+      : "";
+    if (tierInfo.flags.immediateRisk) return `${profilePrefix}즉시 상태 확인과 보고 판단이 필요합니다.`;
+    if (tierInfo.flags.timeSensitive) return `${profilePrefix}다음 근무조가 바로 이어받아야 하는 항목입니다.`;
+    if (tierInfo.flags.carryover) return `${profilePrefix}후속 확인이나 미완료 업무 인계가 필요합니다.`;
+    return `${profilePrefix}배경 정보로 유지하되 상황 변화 시 다시 확인합니다.`;
     if (tierInfo.flags.immediateRisk) return "즉시 상태 확인과 보고 판단이 필요합니다.";
     if (tierInfo.flags.timeSensitive) return "다음 근무조가 바로 이어받아야 할 항목입니다.";
     if (tierInfo.flags.carryover) return "후속 확인이나 미완료 업무 인계가 필요합니다.";
@@ -319,8 +503,8 @@
     return canonicalizeLongitudinalSummary(summary, patient);
   }
 
-  function enrichPrioritizedItem(item, index) {
-    const tierInfo = classifyPriorityTier(item);
+  function enrichPrioritizedItem(item, index, departmentProfile) {
+    const tierInfo = classifyPriorityTier(item, departmentProfile);
     const priorityReasons = buildPriorityReasons(item, tierInfo);
     const verification = buildVerificationForItem(item, tierInfo);
     return {
@@ -333,6 +517,7 @@
       whyRanked: createExplanationLine(priorityReasons),
       actionRelevance: buildActionRelevance(item, tierInfo),
       verification,
+      departmentProfile: departmentProfile || null,
       flags: {
         immediateRisk: tierInfo.flags.immediateRisk,
         timeSensitive: tierInfo.flags.timeSensitive,
@@ -343,8 +528,8 @@
     };
   }
 
-  function enrichChangeEvent(item) {
-    const tierInfo = classifyPriorityTier(item);
+  function enrichChangeEvent(item, departmentProfile) {
+    const tierInfo = classifyPriorityTier(item, departmentProfile);
     return {
       ...item,
       category: item.type,
@@ -353,7 +538,8 @@
       actionRelevance: buildActionRelevance(item, tierInfo),
       evidence: safeEvidenceList(item),
       priorityTier: tierInfo.tier,
-      priorityTierLabel: tierInfo.label
+      priorityTierLabel: tierInfo.label,
+      departmentProfile: departmentProfile || null
     };
   }
 
@@ -427,14 +613,14 @@
     ) || null;
   }
 
-  function enrichSbarItems(items, prioritizedItems, fallbackTier) {
+  function enrichSbarItems(items, prioritizedItems, fallbackTier, departmentProfile) {
     return (items || []).map((item, index) => {
       const matched = matchPrioritizedItem(prioritizedItems, item);
       if (matched) return matched;
       const tierInfo = classifyPriorityTier({
         ...item,
         type: item.type || "background"
-      });
+      }, departmentProfile);
       return {
         ...item,
         rank: index + 1,
@@ -449,7 +635,7 @@
     });
   }
 
-  function buildCanonicalSbarPayload(patient, legacyAnalysis, prioritizedItems, current, previous) {
+  function buildCanonicalSbarPayload(patient, legacyAnalysis, prioritizedItems, current, previous, departmentProfile) {
     const timelineEvents = legacy.scoreHandoffEvents && Array.isArray(legacyAnalysis?.changeEvents)
       ? legacy.scoreHandoffEvents(legacyAnalysis.changeEvents, { current, previous })
       : [];
@@ -463,10 +649,10 @@
       : { situation: [], background: [], assessment: [], recommendation: [] });
 
     return {
-      situation: enrichSbarItems(basePayload.situation || [], prioritizedItems, 1),
-      background: enrichSbarItems(basePayload.background || [], prioritizedItems, 3),
-      assessment: enrichSbarItems(basePayload.assessment || [], prioritizedItems, 2),
-      recommendation: enrichSbarItems(basePayload.recommendation || [], prioritizedItems, 1)
+      situation: enrichSbarItems(basePayload.situation || [], prioritizedItems, 1, departmentProfile),
+      background: enrichSbarItems(basePayload.background || [], prioritizedItems, 3, departmentProfile),
+      assessment: enrichSbarItems(basePayload.assessment || [], prioritizedItems, 2, departmentProfile),
+      recommendation: enrichSbarItems(basePayload.recommendation || [], prioritizedItems, 1, departmentProfile)
     };
   }
 
@@ -506,6 +692,7 @@
 
     const current = normalizedDailyTimeline[normalizedDailyTimeline.length - 1] || null;
     const previous = normalizedDailyTimeline.length > 1 ? normalizedDailyTimeline[normalizedDailyTimeline.length - 2] : null;
+    const departmentProfile = deriveDepartmentProfile(patient, normalizedDailyTimeline);
 
     const longitudinalSummary = legacyAnalysis?.longitudinalSummary?.sections
       ? canonicalizeLongitudinalSummary(legacyAnalysis.longitudinalSummary, patient)
@@ -520,19 +707,19 @@
     const scoredItems = Array.isArray(legacyAnalysis?.prioritizedHandoffItems)
       ? legacyAnalysis.prioritizedHandoffItems
       : (legacy.scoreHandoffEvents
-        ? legacy.scoreHandoffEvents(rawChangeEvents, { current, previous })
+        ? legacy.scoreHandoffEvents(rawChangeEvents, { current, previous, departmentProfile })
         : rawChangeEvents);
 
     const prioritizedHandoffItems = sortPrioritizedItems(
-      normalizeItemsForOutput(scoredItems.map((item, index) => enrichPrioritizedItem(item, index)))
+      normalizeItemsForOutput(scoredItems.map((item, index) => enrichPrioritizedItem(item, index, departmentProfile)))
     );
 
-    const changeEvents = rawChangeEvents.map((item) => enrichChangeEvent(item));
+    const changeEvents = rawChangeEvents.map((item) => enrichChangeEvent(item, departmentProfile));
     const verificationResult = buildVerificationResult(prioritizedHandoffItems);
     const actionNeededItems = prioritizedHandoffItems.filter((item) => item.priorityTier <= 2);
     const carryoverItems = prioritizedHandoffItems.filter((item) => item.flags?.carryover);
     const groupedLowerPrioritySummary = groupLowerPrioritySummary(prioritizedHandoffItems);
-    const sbarPayload = buildCanonicalSbarPayload(patient, legacyAnalysis, prioritizedHandoffItems, current, previous);
+    const sbarPayload = buildCanonicalSbarPayload(patient, legacyAnalysis, prioritizedHandoffItems, current, previous, departmentProfile);
 
     const result = {
       ...(legacyAnalysis || {}),
@@ -545,13 +732,15 @@
       prioritizedHandoffItems,
       actionNeededItems,
       carryoverItems,
+      departmentProfileUsed: departmentProfile,
       groupedLowerPrioritySummary,
       explanationIndex: buildExplanationIndex(longitudinalSummary, prioritizedHandoffItems),
       verificationResult,
       sbarPayload,
       runtimePolicy: {
         sourceAgnostic: true,
-        verificationRequiredForTopTier: true
+        verificationRequiredForTopTier: true,
+        excludedDepartments: ["emergency", "operating-room"]
       }
     };
 
@@ -560,12 +749,13 @@
   }
 
   function rankHandoffItems(events, context) {
+    const departmentProfile = context?.departmentProfileUsed || context?.departmentProfile || null;
     const scoredItems = legacy.scoreHandoffEvents
       ? legacy.scoreHandoffEvents(events || [], context || {})
       : (events || []);
 
     return sortPrioritizedItems(
-      normalizeItemsForOutput(scoredItems.map((item, index) => enrichPrioritizedItem(item, index)))
+      normalizeItemsForOutput(scoredItems.map((item, index) => enrichPrioritizedItem(item, index, departmentProfile)))
     );
   }
 
@@ -596,6 +786,7 @@
     const tier2 = items.filter((item) => item.priorityTier === 2).slice(0, 4);
     const background = items.filter((item) => item.priorityTier === 3).slice(0, 4);
     const verification = analysis?.verificationResult || {};
+    const departmentProfile = analysis?.departmentProfileUsed || null;
 
     return `
       <section class="engine-explainability-panel">
@@ -607,6 +798,7 @@
           <div class="engine-explainability-badges">
             <span class="engine-explainability-badge">엔진 ${escapeHtml(ENGINE_METADATA.version)}</span>
             <span class="engine-explainability-badge">검증 ${escapeHtml(verification.status || "verified")}</span>
+            ${departmentProfile ? `<span class="engine-explainability-badge">${escapeHtml(departmentProfile.label)}</span>` : ""}
           </div>
         </div>
         <div class="engine-explainability-grid">
@@ -646,7 +838,15 @@
     return {
       ...ENGINE_METADATA,
       bands: LONGITUDINAL_BAND_LABELS,
-      priorityTiers: PRIORITY_TIER_LABELS
+      priorityTiers: PRIORITY_TIER_LABELS,
+      departmentProfiles: Object.values(DEPARTMENT_PROFILES).map((profile) => ({
+        id: profile.id,
+        label: profile.label,
+        description: profile.description,
+        icu: profile.icu,
+        family: profile.family
+      })),
+      excludedDepartments: ["emergency", "operating-room"]
     };
   }
 
