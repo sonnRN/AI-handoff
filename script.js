@@ -366,12 +366,12 @@ async function updateDashboard(pid) {
   setHTML('allergyBadges', renderAllergyBadges(p));
   setHTML('cautionCard', renderCautionCard(p, data));
 
-  setHTML('admitReason', `<div style="max-height:110px; overflow-y:auto; font-size:13px; line-height:1.55;">${formatMultilineText(p.admissionNote || p.admitReason)}</div>`);
+  setHTML('admitReason', `<div style="max-height:140px; overflow-y:auto; font-size:13px; line-height:1.6;">${formatAdmissionSummaryHtml(p.admissionNote || p.admitReason)}</div>`);
   setHTML('nursingProblem', formatMultilineText(data.nursingProblem));
 
   const h = data.handover || {};
   const combinedLines = [...(h.lines || []), ...(h.tubes || []), ...(h.drains || []), ...(h.vent || [])];
-  setHTML('lineTube', renderSimpleList(combinedLines));
+  setHTML('lineTube', renderCurrentLineTubeList(h));
 
   const hourly = data.hourly || [];
   const vsFlow = hourly.filter((h, i) => i % 4 === 0 || h.event).map(h => {
@@ -771,6 +771,41 @@ function formatMultilineText(value) {
     .join('') || '-';
 }
 
+function stripHtmlTags(value) {
+  return String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function splitAdmissionParts(value) {
+  return String(value || '')
+    .split(/\s*\/\s*|\n+/)
+    .map(part => stripHtmlTags(part))
+    .filter(Boolean);
+}
+
+function formatAdmissionSummaryHtml(value) {
+  if (!value) return '-';
+
+  const source = String(value).replace(/<br\s*\/?>/gi, '\n');
+  const matches = Array.from(source.matchAll(/<b>(.*?)<\/b>\s*:\s*([^\n]+)/gi));
+
+  if (matches.length) {
+    return matches.map((match) => {
+      const title = stripHtmlTags(match[1]);
+      const lines = splitAdmissionParts(match[2]);
+      return `
+        <div class="admit-summary-block">
+          <div class="admit-summary-title">${escapeHtml(title)}</div>
+          ${lines.map((line) => `<div class="admit-summary-line">${escapeHtml(line)}</div>`).join('')}
+        </div>
+      `;
+    }).join('');
+  }
+
+  return splitAdmissionParts(source)
+    .map((line) => `<div class="admit-summary-line">${escapeHtml(line)}</div>`)
+    .join('') || '-';
+}
+
 function formatLabValue(value) {
   if (value === null || typeof value === 'undefined' || value === '') return '-';
   const text = String(value);
@@ -784,6 +819,30 @@ function renderAllergyBadges(patient) {
     return '<span class="flag-badge" style="background:#eceff1; color:#455a64; border-color:#cfd8dc;">알레르기 정보 없음</span>';
   }
   return items.slice(0, 5).map(item => `<span class="flag-badge">${item}</span>`).join('');
+}
+
+function collectCurrentLineTubeItems(handover) {
+  const seen = new Set();
+  const merged = [
+    ...(handover?.lines || []),
+    ...(handover?.tubes || []),
+    ...(handover?.drains || []),
+    ...(handover?.vent || [])
+  ];
+
+  return merged.filter((item) => {
+    const text = typeof item === 'string' ? item : item?.text;
+    if (!text) return false;
+    const key = stripHtmlTags(text).toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function renderCurrentLineTubeList(handover) {
+  const items = collectCurrentLineTubeItems(handover);
+  return items.length ? renderSimpleList(items) : '-';
 }
 
 function renderCautionCard(patient, data) {
@@ -1367,12 +1426,12 @@ updateDashboard = async function (pid) {
 
   const historyStr = (data.pastHistory || []).map(item => `<div>• ${item}</div>`).join('');
   setHTML('pastHistoryList', historyStr || '-');
-  setHTML('admitReason', `<div style="max-height:120px; overflow-y:auto; font-size:13px; line-height:1.6;">${formatMultilineText(p.admissionNote || p.admitReason)}</div>`);
+  setHTML('admitReason', `<div style="max-height:140px; overflow-y:auto; font-size:13px; line-height:1.6;">${formatAdmissionSummaryHtml(p.admissionNote || p.admitReason)}</div>`);
   setHTML('nursingProblem', formatMultilineText(data.nursingProblem));
 
   const handover = data.handover || {};
   const currentLineTube = [...(handover.lines || []), ...(handover.tubes || []), ...(handover.drains || []), ...(handover.vent || [])];
-  setHTML('lineTube', renderSimpleList(currentLineTube));
+  setHTML('lineTube', renderCurrentLineTubeList(handover));
 
   const hourly = data.hourly || [];
   const vsFlow = hourly
@@ -3402,12 +3461,12 @@ updateDashboard = async function (pid) {
 
   const historyStr = (data.pastHistory || []).map(item => `<div>• ${item}</div>`).join('');
   setHTML('pastHistoryList', historyStr || '-');
-  setHTML('admitReason', `<div style="max-height:120px; overflow-y:auto; font-size:13px; line-height:1.6;">${formatMultilineText(p.admissionNote || p.admitReason)}</div>`);
+  setHTML('admitReason', `<div style="max-height:140px; overflow-y:auto; font-size:13px; line-height:1.6;">${formatAdmissionSummaryHtml(p.admissionNote || p.admitReason)}</div>`);
   setHTML('nursingProblem', formatMultilineText(data.nursingProblem));
 
   const handover = data.handover || {};
   const currentLineTube = [...(handover.lines || []), ...(handover.tubes || []), ...(handover.drains || []), ...(handover.vent || [])];
-  setHTML('lineTube', renderSimpleList(currentLineTube));
+  setHTML('lineTube', renderCurrentLineTubeList(handover));
 
   const hourly = data.hourly || [];
   const vsFlow = hourly

@@ -263,8 +263,9 @@ function normalizePatientDetail(data) {
     reportList,
     medicationOrders,
     conditions,
-    medications,
-    administrations: data.administrations,
+      medications,
+      observations,
+      administrations: data.administrations,
     reports,
     procedures,
     lineTube,
@@ -317,11 +318,11 @@ function buildDailyData(input) {
         dailyCarePlans
       ),
       handover: {
-        lines: input.lineTube.lines,
-        tubes: input.lineTube.tubes,
-        drains: input.lineTube.drains,
+        lines: dailyLineTube.lines,
+        tubes: dailyLineTube.tubes,
+        drains: dailyLineTube.drains,
         drugs: dailyMedicationOrders.running,
-        vent: input.lineTube.vent,
+        vent: dailyLineTube.vent,
         neuro: buildNeuroItems(dailyDiagnosisList.length ? dailyDiagnosisList : input.diagnosisList, dailyCarePlans),
         etc: input.allergyList.slice(0, 2).map((text) => ({ text, detail: "알레르기 / 주의" }))
       },
@@ -470,6 +471,97 @@ function buildLineTubeSummary(devices, procedures, serviceRequests, observations
     drains: dedupeItems(buckets.drains),
     vent: dedupeItems(buckets.vent)
   };
+}
+
+function buildDailyLineTubeSummary(input = {}) {
+  const buckets = { lines: [], tubes: [], drains: [], vent: [] };
+  const addItems = (key, items) => {
+    (items || []).forEach((item) => {
+      if (item?.text) buckets[key].push(item);
+    });
+  };
+
+  const resourceSummary = buildLineTubeSummary(
+    [],
+    input.procedures || [],
+    input.serviceRequests || [],
+    input.observations || []
+  );
+
+  addItems("lines", resourceSummary.lines);
+  addItems("tubes", resourceSummary.tubes);
+  addItems("drains", resourceSummary.drains);
+  addItems("vent", resourceSummary.vent);
+
+  inferLineTubeFromMedicationOrders(buckets, input.medicationOrders);
+  inferLineTubeFromCarePlans(buckets, input.carePlans);
+
+  if (input.useBaseFallback) {
+    if (!buckets.lines.length) addItems("lines", input.baseLineTube?.lines || []);
+    if (!buckets.tubes.length) addItems("tubes", input.baseLineTube?.tubes || []);
+    if (!buckets.drains.length) addItems("drains", input.baseLineTube?.drains || []);
+    if (!buckets.vent.length) addItems("vent", input.baseLineTube?.vent || []);
+  }
+
+  return {
+    lines: dedupeItems(buckets.lines).slice(0, 1),
+    tubes: dedupeItems(buckets.tubes).slice(0, 1),
+    drains: dedupeItems(buckets.drains).slice(0, 1),
+    vent: dedupeItems(buckets.vent).slice(0, 1)
+  };
+}
+
+function inferLineTubeFromMedicationOrders(buckets, medicationOrders) {
+  const candidates = [
+    ...(medicationOrders?.running || []),
+    ...(medicationOrders?.inj || [])
+  ];
+
+  candidates.forEach((item) => {
+    const text = normalizeClinicalText(`${item?.text || ""} ${item?.detail || ""}`);
+    if (!text) return;
+
+    if (/picc/.test(text)) {
+      buckets.lines.push({ text: "PICC", detail: item.text || item.detail || "medication support" });
+      return;
+    }
+
+    if (/port|chemo port|implanted port/.test(text)) {
+      buckets.lines.push({ text: "Implanted port", detail: item.text || item.detail || "medication support" });
+      return;
+    }
+
+    if (/central line|cvc|midline/.test(text)) {
+      buckets.lines.push({ text: "Central line", detail: item.text || item.detail || "medication support" });
+      return;
+    }
+
+    if (/iv|infusion|drip|pump|continuous|tpn|loading/.test(text)) {
+      buckets.lines.push({ text: "Peripheral IV", detail: item.text || item.detail || "IV therapy" });
+      return;
+    }
+
+    if (/oxygen|nasal cannula|mask|hfnc|high flow|ventilator|trach|bipap|cpap|ecmo/.test(text) && !/room air/.test(text)) {
+      buckets.vent.push({ text: "Oxygen support", detail: item.text || item.detail || "respiratory support" });
+    }
+  });
+}
+
+function inferLineTubeFromCarePlans(buckets, carePlans) {
+  (carePlans || []).forEach((item) => {
+    const title = normalizeClinicalText(carePlanTitle(item));
+    if (!title) return;
+
+    if (/foley|urinary catheter|catheter care/.test(title)) {
+      buckets.tubes.push({ text: "Foley catheter", detail: carePlanTitle(item) });
+    } else if (/ng|l-tube|feeding tube|peg|g-tube/.test(title)) {
+      buckets.tubes.push({ text: "Feeding tube", detail: carePlanTitle(item) });
+    } else if (/jp drain|drain|hemovac|pcd|chest tube/.test(title)) {
+      buckets.drains.push({ text: "Drain", detail: carePlanTitle(item) });
+    } else if (/oxygen|nasal cannula|mask|ventilator|trach|hfnc|bipap|cpap/.test(title)) {
+      buckets.vent.push({ text: "Oxygen support", detail: carePlanTitle(item) });
+    }
+  });
 }
 
 function classifyClinicalStatusBucket(sourceType, label, detail) {
@@ -1487,12 +1579,22 @@ function buildDailyData(input) {
     const dailyReports = filterResourcesForDate(input.reports || [], reportDate, date, input.dateMap || {}, { mode: "recent", daysBack: 2, limit: 4 });
     const dailyProcedures = filterResourcesForDate(input.procedures || [], procedureDate, date, input.dateMap || {}, { mode: "recent", daysBack: 2, limit: 4 });
     const dailyDocuments = filterResourcesForDate(input.documents || [], documentDate, date, input.dateMap || {}, { mode: "recent", daysBack: 2, limit: 4 });
+    const dailyObservations = filterResourcesForDate(input.observations || [], observationDateTime, date, input.dateMap || {}, { mode: "recent", daysBack: 1, limit: 40 });
     const dailyMedicationSet = filterMedicationSetForDate(input.medications || [], input.administrations || [], date, input.dateMap || {});
     const dailyMedicationOrders = buildMedicationOrders(dailyMedicationSet.medications, dailyMedicationSet.administrations);
     const dailyDiagnosisList = unique(dailyConditions.map(conditionLabel)).slice(0, 6);
     const dailyDoctorOrders = buildDoctorOrders(dailyMedicationOrders, dailyServiceRequests, dailyCarePlans);
     const dailyLabs = input.observationSummary.labsByDate[date] || input.observationSummary.latestLabs || {};
-    const dailyNursingTasks = buildNursingTasks(input.lineTube, dailyCarePlans, dailyDocuments);
+    const dailyLineTube = buildDailyLineTubeSummary({
+      baseLineTube: input.lineTube,
+      procedures: dailyProcedures,
+      serviceRequests: dailyServiceRequests,
+      observations: dailyObservations,
+      medicationOrders: dailyMedicationOrders,
+      carePlans: dailyCarePlans,
+      useBaseFallback: date === input.dates[input.dates.length - 1]
+    });
+    const dailyNursingTasks = buildNursingTasks(dailyLineTube, dailyCarePlans, dailyDocuments);
     const dailyPlanItems = buildPlanItems(dailyDiagnosisList.length ? dailyDiagnosisList : input.diagnosisList, dailyCarePlans, dailyServiceRequests);
     const eventNotes = [
       ...(input.observationSummary.eventsByDate[date] || []),
@@ -1547,7 +1649,7 @@ function buildDailyData(input) {
         isolation: input.isolation || findIsolation(input.serviceRequests || [], input.conditions || [], input.documents || []),
         activity: findActivity(dailyCarePlans.length ? dailyCarePlans : input.carePlans, input.latestEncounter),
         cautionList: input.allergyList.slice(0, 3),
-        lineTube: input.lineTube,
+        lineTube: dailyLineTube,
         doctorOrders: dailyDoctorOrders,
         medicationOrders: dailyMedicationOrders,
         vital: dayVital,

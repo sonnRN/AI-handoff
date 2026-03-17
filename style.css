@@ -329,6 +329,24 @@ body {
   white-space: nowrap;
 }
 
+.admit-summary-block + .admit-summary-block {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #d8dee9;
+}
+
+.admit-summary-title {
+  font-weight: bold;
+  color: #2d4a73;
+  margin-bottom: 4px;
+}
+
+.admit-summary-line {
+  line-height: 1.55;
+  color: #333;
+  word-break: keep-all;
+}
+
 .pt-row .iso-badge {
   font-size: 9px;
   padding: 1px 4px;
