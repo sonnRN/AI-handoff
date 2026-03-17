@@ -30,7 +30,8 @@ The gateway rejects unknown payload sources, and the FHIR adapter rejects non-al
    - public synthetic FHIR data
    - local cache
 5. Patient-facing identities from external synthetic FHIR data are relabeled as synthetic before display.
-6. When the app is served from GitHub Pages, the browser falls back to `public-demo-data/patients-bundle.json` because GitHub Pages cannot host server handler execution.
+6. When the app is served from GitHub Pages, the browser reads `runtime-config.js` and can call a separately deployed remote server.
+7. If no remote server is configured, the browser falls back to `public-demo-data/patients-bundle.json`.
 
 ## Main Files
 

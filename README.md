@@ -19,7 +19,7 @@ This project shows how MCP-delivered synthetic patient timeline data can be turn
 - prioritized nursing handoff items
 - structured output that can later support SBAR-style rendering
 
-The current demo runtime is built on an MCP-backed public synthetic FHIR adapter. For GitHub Pages, a static public synthetic snapshot is included as a read-only fallback because GitHub Pages cannot run the MCP or local server-handler layer.
+The current demo runtime is built on an MCP-backed public synthetic FHIR adapter. GitHub Pages can connect to a separately deployed free server, and falls back to a static public synthetic snapshot only when no remote server is configured.
 
 ## Public-Release Data Policy
 
@@ -60,7 +60,7 @@ node scripts/run-node-tests.js
 
 ### 3. Open the demo
 
-Use your preferred static server to serve the root app files. The browser runtime can use the public demo snapshot on GitHub Pages, and local tooling can call the server handler modules directly.
+Use your preferred static server to serve the root app files. The browser runtime can connect to a remote server if `runtime-config.js` is configured, and GitHub Pages can fall back to the public demo snapshot when needed.
 
 Main entrypoints:
 
@@ -73,11 +73,23 @@ Main entrypoints:
 npm run mcp:server
 ```
 
-### 5. Verify direct MCP stdio mode
+### 5. Start the remote HTTP server locally
+
+```bash
+npm start
+```
+
+### 6. Verify direct MCP stdio mode
 
 ```bash
 npm run test:mcp:stdio
 ```
+
+### 7. Connect GitHub Pages to a free remote server
+
+1. Deploy this repo as a free web service on Render.
+2. Set the server URL in `runtime-config.js`.
+3. Push the updated `runtime-config.js` so GitHub Pages can call the remote server.
 
 ## Architecture Overview
 
@@ -95,6 +107,9 @@ flowchart LR
 
 - Browser app
   - UI and rendering
+- Remote HTTP server
+  - public API endpoints
+  - CORS for GitHub Pages
 - server handler layer
   - patient data access
   - synthetic FHIR adapter
@@ -122,6 +137,10 @@ See:
   - selected-range summary behavior
 - `src/server/handlers/`
   - patient data handler modules
+- `src/server/httpServer.js`
+  - remote HTTP server for GitHub Pages or other static frontends
+- `runtime-config.js`
+  - frontend remote API base configuration
 - `src/`
   - harness, MCP runtime, and synthetic test fixtures
 - `tests/`
@@ -137,6 +156,8 @@ See:
   - MCP patient smoke test
 - `npm run test:mcp:gateway`
   - gateway cache and fallback regression
+- `npm run test:server`
+  - remote HTTP server smoke test
 - `npm run test:stage2`
   - stage 2 summary regression
 - `npm run test:fhir:smoke`
@@ -177,3 +198,4 @@ Detailed guidance:
 
 - [FEEDBACK.md](FEEDBACK.md)
 - [docs/README.md](docs/README.md)
+- [docs/render-deployment.md](docs/render-deployment.md)

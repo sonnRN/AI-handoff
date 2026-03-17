@@ -18,6 +18,9 @@ The repository has two main runtime layers:
   - `script.js`
   - `stage2-overrides.js`
   - `stage2-period-overrides.js`
+- remote server runtime
+  - `src/server/httpServer.js`
+  - `src/server/handlers/`
 - harness runtime
   - `src/harness/runtime/`
 - MCP/FHIR data runtime
@@ -61,6 +64,14 @@ The harness runtime loads browser-side logic inside a VM sandbox so Node-based t
 3. The MCP server calls `patientDataGateway`.
 4. The gateway reads public synthetic FHIR data or file cache.
 5. The resulting patient payload flows into the existing handoff engine unchanged.
+
+## GitHub Pages + Remote Server Flow
+
+1. GitHub Pages serves the static frontend.
+2. The frontend reads `runtime-config.js`.
+3. If `apiBase` is configured, the browser calls the remote server.
+4. The remote server exposes `/api/patients-mcp` and `/api/patients`.
+5. If no remote server is configured, the browser falls back to the public synthetic snapshot bundle.
 
 ## Structural Boundary
 

@@ -13,6 +13,7 @@ const patientDetailCache = new Map();
 let uiInitialized = false;
 const KOREA_TIMEZONE = 'Asia/Seoul';
 const PATIENT_LIST_COUNT = 20;
+const PUBLIC_DEMO_BUNDLE_URL = 'public-demo-data/patients-bundle.json';
 
 function unique(items) {
   return Array.from(new Set((items || []).filter(Boolean)));
@@ -55,10 +56,7 @@ async function initializeApp() {
 }
 
 async function loadPatientStore() {
-  const endpoints = [
-    { kind: 'mcp-api', url: 'api/patients-mcp' },
-    { kind: 'public-bundle', url: 'public-demo-data/patients-bundle.json' }
-  ];
+  const endpoints = buildPatientDataEndpoints();
 
   try {
     let lastError = null;
@@ -91,7 +89,7 @@ async function loadPatientStore() {
     console.error('MCP patient load failed.', error);
     patientStore = [];
     usingExternalData = true;
-    externalApiBase = 'api/patients-mcp';
+    externalApiBase = endpoints.find(endpoint => endpoint.kind !== 'public-bundle')?.url || '';
     externalDataSourceLabel = '합성 FHIR MCP 연결 실패';
     patientLoadError = error.message || 'MCP patient load failed';
   }
@@ -1219,6 +1217,71 @@ function preloadPatientDetailCache(payload) {
       patientDetailCache.set(String(id), detail);
     }
   });
+}
+
+function buildPatientDataEndpoints() {
+  const endpoints = [];
+  const remoteApiBase = getConfiguredRemoteApiBase();
+
+  if (remoteApiBase) {
+    endpoints.push({
+      kind: 'remote-mcp',
+      url: buildApiUrl(remoteApiBase, '/api/patients-mcp')
+    });
+  }
+
+  endpoints.push({
+    kind: 'same-origin-mcp',
+    url: '/api/patients-mcp'
+  });
+
+  endpoints.push({
+    kind: 'public-bundle',
+    url: PUBLIC_DEMO_BUNDLE_URL
+  });
+
+  return dedupeEndpoints(endpoints);
+}
+
+function dedupeEndpoints(endpoints) {
+  const seen = new Set();
+  return endpoints.filter(endpoint => {
+    const key = `${endpoint.kind}:${endpoint.url}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function getConfiguredRemoteApiBase() {
+  const configBase = normalizeApiBase(window?.AI_HANDOFF_RUNTIME_CONFIG?.apiBase);
+  if (configBase) return configBase;
+
+  const queryBase = normalizeApiBase(getQueryParam('apiBase'));
+  if (queryBase) return queryBase;
+
+  return '';
+}
+
+function normalizeApiBase(value) {
+  const source = String(value || '').trim();
+  if (!source) return '';
+  return source.replace(/\/+$/, '');
+}
+
+function buildApiUrl(base, path) {
+  const normalizedBase = normalizeApiBase(base);
+  const normalizedPath = String(path || '').startsWith('/') ? path : `/${path}`;
+  return `${normalizedBase}${normalizedPath}`;
+}
+
+function getQueryParam(key) {
+  try {
+    const params = new URLSearchParams(window?.location?.search || '');
+    return params.get(key) || '';
+  } catch (error) {
+    return '';
+  }
 }
 function openAIPanel() { if (!selectedPatientId) return alert("환자선택필요"); document.getElementById('aiPanel').classList.add('active'); document.getElementById('overlay').classList.add('active'); aiPanelOpen = true; runAIRangeAnalysis(selectedPatientId); }
 function closeAIPanel() { document.getElementById('aiPanel').classList.remove('active'); document.getElementById('overlay').classList.remove('active'); aiPanelOpen = false; }
