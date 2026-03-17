@@ -777,7 +777,7 @@ function stripHtmlTags(value) {
 
 function splitAdmissionParts(value) {
   return String(value || '')
-    .split(/\s*\/\s*|\n+/)
+    .split(/\s*\/\s*|\s*,\s*|\n+/)
     .map(part => stripHtmlTags(part))
     .filter(Boolean);
 }
