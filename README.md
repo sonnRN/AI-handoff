@@ -19,7 +19,7 @@ This project shows how MCP-delivered synthetic patient timeline data can be turn
 - prioritized nursing handoff items
 - structured output that can later support SBAR-style rendering
 
-The current demo runtime is built on an MCP-backed public synthetic FHIR adapter. GitHub Pages can connect to a separately deployed free server, and falls back to a static public synthetic snapshot only when no remote server is configured.
+The current demo runtime is built on an MCP-backed public synthetic FHIR adapter. The published app is intended to use a live remote API path rather than a static patient snapshot.
 
 ## Public-Release Data Policy
 
@@ -60,7 +60,7 @@ node scripts/run-node-tests.js
 
 ### 3. Open the demo
 
-Use your preferred static server to serve the root app files. The browser runtime can connect to a remote server if `runtime-config.js` is configured, and GitHub Pages can fall back to the public demo snapshot when needed.
+Use your preferred static server to serve the root app files. The browser runtime should connect to a remote server through `runtime-config.js` or same-origin API routes.
 
 Main entrypoints:
 
