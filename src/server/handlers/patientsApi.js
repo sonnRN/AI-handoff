@@ -198,7 +198,11 @@ async function fetchPatientCandidatePool(options = {}) {
     pageCount += 1;
   }
 
-  const pagedResources = interleaveCandidatePages(pages, targetCount);
+  const supplementTargetCount = Math.max(
+    0,
+    Math.max(targetCount - seededResources.length, Math.ceil(targetCount / 3))
+  );
+  const pagedResources = interleaveCandidatePages(pages, supplementTargetCount);
 
   return {
     resources: mergeUniqueResources([...seededResources, ...pagedResources]).slice(0, targetCount),
