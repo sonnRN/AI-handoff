@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 
-const ROOT = path.resolve(__dirname, "..", "..");
+const ROOT = path.resolve(__dirname, "..", "..", "..");
 const LOCAL_PATIENTS_FILE = path.join(ROOT, "patients.js");
 
 let cachedPatients = null;

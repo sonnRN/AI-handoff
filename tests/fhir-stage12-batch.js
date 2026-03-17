@@ -1,5 +1,5 @@
-const { loadHandoffEngineApi } = require("../engine/runtime/loadHandoffEngineApi");
-const { fetchPatientList } = require("../engine/runtime/fetchFhirPatients");
+const { loadHandoffEngineApi } = require("../src/harness/runtime/loadHandoffEngineApi");
+const { fetchPatientList } = require("../src/harness/runtime/fetchFhirPatients");
 
 const DEFAULT_COUNT = 10;
 

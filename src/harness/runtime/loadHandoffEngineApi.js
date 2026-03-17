@@ -3,7 +3,7 @@ const path = require("path");
 const vm = require("vm");
 const { createEngineSandbox } = require("./createEngineSandbox");
 
-const ROOT = path.resolve(__dirname, "..", "..");
+const ROOT = path.resolve(__dirname, "..", "..", "..");
 const ENGINE_FILES = [
   "script.js",
   "stage2-overrides.js",

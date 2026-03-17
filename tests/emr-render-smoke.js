@@ -1,6 +1,6 @@
 const assert = require("assert");
-const { fetchPatientList } = require("../engine/runtime/fetchFhirPatients");
-const { loadHandoffEngineApi } = require("../engine/runtime/loadHandoffEngineApi");
+const { fetchPatientList } = require("../src/harness/runtime/fetchFhirPatients");
+const { loadHandoffEngineApi } = require("../src/harness/runtime/loadHandoffEngineApi");
 
 async function main() {
   const { handler, patients } = await fetchPatientList({ count: 1 });

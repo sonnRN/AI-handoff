@@ -2,7 +2,7 @@
 
 ## Scope
 
-- Prefer `engine/runtime/` helpers when a test or script needs to load the browser handoff engine.
+- Prefer `src/harness/runtime/` helpers when a test or script needs to load the browser handoff engine.
 - Prefer `tests/fixtures/` for regression setup instead of embedding large patient mocks inside test files.
 - Change `script.js`, `stage2-overrides.js`, or `stage2-period-overrides.js` only when a runtime or fixture change cannot solve the issue.
 
