@@ -2,6 +2,17 @@
 
 Use this file as the document entrypoint for agent work.
 
+## Public Release Essentials
+
+- [../DISCLAIMER.md](../DISCLAIMER.md)
+  - Public safety boundary and non-clinical-use statement.
+- [../PRIVACY.md](../PRIVACY.md)
+  - Privacy, data provenance, and repository-sharing rules.
+- [../FEEDBACK.md](../FEEDBACK.md)
+  - Community feedback guidance for the public demo.
+- [../RELEASE_READINESS.md](../RELEASE_READINESS.md)
+  - Public release checklist and current safety posture.
+
 ## Source of Truth
 
 - [Product Spec](product-spec.md)

@@ -22,6 +22,8 @@ The project needs to turn patient timeline data into usable handoff summaries wi
 - full EMR replacement
 - direct clinical decision authority
 - dependence on always-on external FHIR connectivity for local validation
+- use with real patient data in a public repository
+- production clinical deployment
 
 ## Quality Requirements
 

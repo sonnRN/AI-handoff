@@ -3,7 +3,11 @@ const { ROOT } = require("./loadHandoffEngineApi");
 const { buildLocalPatientSummaries, loadLocalDemoPatients } = require("./loadLocalDemoPatients");
 
 function getPatientsHandler() {
-  return require(path.join(ROOT, "netlify", "functions", "patients.js")).handler;
+  try {
+    return require(path.join(ROOT, "netlify", "functions", "patients-mcp.js")).handler;
+  } catch (error) {
+    return require(path.join(ROOT, "netlify", "functions", "patients.js")).handler;
+  }
 }
 
 function jsonResponse(statusCode, body) {
@@ -88,16 +92,33 @@ async function fetchPatientList(options = {}) {
   if (typeof options.count !== "undefined") {
     queryStringParameters.count = String(options.count);
   }
+  if (typeof options.cursor === "string" && options.cursor) {
+    queryStringParameters.cursor = options.cursor;
+  }
 
   const remoteHandler = getPatientsHandler();
 
   try {
     const payload = await tryFetchPatientList(remoteHandler, queryStringParameters);
+    const resilientHandler = async function resilientHandler(event = {}) {
+      const nextQuery = event.queryStringParameters || {};
+      if (typeof nextQuery.id !== "undefined") {
+        const detailResponse = await remoteHandler({
+          queryStringParameters: { id: String(nextQuery.id) }
+        });
+        return jsonResponse(200, parseHandlerPayload(detailResponse));
+      }
+      const pageResponse = await remoteHandler({ queryStringParameters: nextQuery });
+      return jsonResponse(200, parseHandlerPayload(pageResponse));
+    };
+
     return {
-      handler: remoteHandler,
+      handler: resilientHandler,
       patients: payload.patients,
       source: payload.source || "smart-health-it-sandbox",
-      fallback: false
+      fallback: false,
+      pageInfo: payload.pageInfo || null,
+      mcp: payload.mcp || null
     };
   } catch (remoteError) {
     const fallbackHandler = createLocalFallbackHandler();
@@ -107,7 +128,8 @@ async function fetchPatientList(options = {}) {
       patients: payload.patients,
       source: payload.source || "local-demo-fallback",
       fallback: true,
-      fallbackReason: remoteError.message
+      fallbackReason: remoteError.message,
+      pageInfo: payload.pageInfo || null
     };
   }
 }
@@ -124,10 +146,12 @@ async function fetchPatientDetail(id) {
 }
 
 async function fetchSamplePatient(patientId, count = 10) {
+  if (patientId) {
+    return fetchPatientDetail(patientId);
+  }
+
   const { handler, patients } = await fetchPatientList({ count });
-  const sample = patientId
-    ? patients.find((patient) => String(patient.id) === String(patientId))
-    : patients[0];
+  const sample = patients[0];
 
   if (!sample) {
     throw new Error(`Requested patient id not found: ${patientId}`);

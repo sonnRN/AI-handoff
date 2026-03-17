@@ -6,6 +6,7 @@
 - extracted shared VM runtime helpers
 - extracted shared patient-fetch helpers
 - added offline fallback for remote FHIR failures
+- added MCP-backed FHIR gateway with cache and direct fallback path
 - moved golden patient fixtures into shared test data
 - unified validation under `npm test`
 
@@ -21,6 +22,7 @@
 - add decision records when summary heuristics change
 - consider moving additional reusable app-side utilities into `src/`
 - expand render assertions for more UI states and selected-range behavior
+- expand MCP pagination usage from list API into the live patient list UI
 
 ## Pending Review Placeholder
 

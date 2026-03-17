@@ -1,5 +1,15 @@
 # Architecture
 
+## Public Release Scope
+
+This repository is a demo and research prototype. The architecture is organized to keep:
+
+- synthetic data sources separate from handoff logic
+- data access separate from algorithm logic
+- public-review safety boundaries visible
+
+The core release claim is architectural, not clinical deployment readiness.
+
 ## Overview
 
 The repository has two main runtime layers:
@@ -10,6 +20,10 @@ The repository has two main runtime layers:
   - `stage2-period-overrides.js`
 - harness runtime
   - `src/harness/runtime/`
+- MCP/FHIR data runtime
+  - `src/mcp/runtime/`
+  - `src/mcp/client/`
+  - `src/mcp/server/`
 
 The harness runtime loads browser-side logic inside a VM sandbox so Node-based tests can validate summary behavior without a DOM or live UI.
 
@@ -22,7 +36,13 @@ The harness runtime loads browser-side logic inside a VM sandbox so Node-based t
 - `src/harness/runtime/fetchFhirPatients.js`
   - fetches patient summaries/details through the Netlify function
 - `src/harness/runtime/loadLocalDemoPatients.js`
-  - offline fallback loader for `patients.js`
+  - synthetic fixture loader for harness-only regression tests
+- `src/mcp/runtime/patientDataGateway.js`
+  - stabilizes remote FHIR fetches with cache and fallback
+- `src/mcp/server/fhirMcpServer.js`
+  - exposes patient list/detail tools over a local MCP transport
+- `src/mcp/client/fhirMcpClient.js`
+  - connects Node-side callers to the MCP server
 - `tests/fixtures/`
   - golden synthetic patients and expectations
 
@@ -30,12 +50,21 @@ The harness runtime loads browser-side logic inside a VM sandbox so Node-based t
 
 1. A test or script loads the harness API.
 2. The harness reads browser engine files into a VM sandbox.
-3. Patient input comes from local fixtures, local demo patients, or the Netlify FHIR function.
+3. Patient input comes from MCP-backed synthetic FHIR intake or harness-only synthetic fixtures.
 4. The engine builds normalized timelines, longitudinal summaries, handoff analysis, and narrative SBAR HTML.
 5. Tests assert on the resulting structured output or rendered HTML.
+
+## MCP Data Flow
+
+1. Browser or Node tooling calls `patients-mcp`.
+2. `patients-mcp` tries the local MCP client first.
+3. The MCP server calls `patientDataGateway`.
+4. The gateway reads public synthetic FHIR data or file cache.
+5. The resulting patient payload flows into the existing handoff engine unchanged.
 
 ## Structural Boundary
 
 - Browser logic remains in root app files for the live UI.
 - Reusable validation and automation helpers live under `src/`.
+- Live app runtime should depend on `patients-mcp` rather than local patient files.
 - Tests should depend on `src/harness/` instead of hand-rolled VM setup.

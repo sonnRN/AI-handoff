@@ -29,3 +29,7 @@ The current source-of-truth validation surface is the harness test suite. CI sho
 ### Defer lint and formatter rollout
 
 Lint and formatter tooling are useful, but the repository does not yet have a stable command surface for them. This pass keeps the harness honest by documenting that absence instead of inventing new tooling.
+
+### Prepare the repository for synthetic-only public release
+
+The public repository should not expose realistic patient-like identities or ambiguous demo data. Local demo patients were relabeled as clearly synthetic, and public synthetic FHIR identities are converted to synthetic aliases before display.

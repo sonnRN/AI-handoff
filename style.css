@@ -31,6 +31,15 @@ body {
   align-items: center;
 }
 
+.public-release-banner {
+  background: #fff3cd;
+  color: #5c4300;
+  border-bottom: 1px solid #e0c36c;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .top-bar-actions {
   display: flex;
   align-items: center;
@@ -232,6 +241,22 @@ body {
 .list-body {
   flex: 1;
   overflow-y: auto;
+}
+
+.pt-empty {
+  padding: 18px 12px;
+  color: #5a2741;
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.pt-empty-detail {
+  display: inline-block;
+  margin-top: 6px;
+  color: #6d6d6d;
+  font-size: 11px;
+  word-break: break-word;
 }
 
 .list-footer {

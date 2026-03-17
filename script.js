@@ -4,12 +4,15 @@ let aiPanelOpen = false;
 let checklistState = {};
 let currentDateIndex = 9;
 let dateList = [];
-const localPatients = typeof patients !== 'undefined' ? patients : [];
 let patientStore = [];
 let usingExternalData = false;
+let externalApiBase = '/api/patients-mcp';
+let externalDataSourceLabel = '';
+let patientLoadError = '';
 const patientDetailCache = new Map();
 let uiInitialized = false;
 const KOREA_TIMEZONE = 'Asia/Seoul';
+const PATIENT_LIST_COUNT = 20;
 
 function unique(items) {
   return Array.from(new Set((items || []).filter(Boolean)));
@@ -31,6 +34,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
 async function initializeApp() {
   await loadPatientStore();
+  renderPatientList();
+  setupUI();
+  updateDataSourceLabel();
+  updateDateDisplay();
   if (!patientStore.length) return;
 
   let firstPatient = patientStore[0];
@@ -42,33 +49,44 @@ async function initializeApp() {
 
   syncDateList(firstPatient);
   currentDateIndex = Math.max(0, dateList.length - 1);
-
-  renderPatientList();
-  setupUI();
   setupAIRangeSelectors();
-  updateDataSourceLabel();
   updateDateDisplay();
   selectPatient(patientStore[0].id);
 }
 
 async function loadPatientStore() {
+  const endpoints = ['/api/patients-mcp'];
+
   try {
-    const response = await fetch('/api/patients');
-    if (!response.ok) throw new Error(`External patient list failed: ${response.status}`);
+    let lastError = null;
+    patientLoadError = '';
 
-    const payload = await response.json();
-    if (!payload.patients || !payload.patients.length) throw new Error('No external patients returned');
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(`${endpoint}?count=${PATIENT_LIST_COUNT}`);
+        if (!response.ok) throw new Error(`External patient list failed: ${response.status}`);
 
-    patientStore = payload.patients;
-    usingExternalData = true;
+        const payload = await response.json();
+        if (!payload.patients || !payload.patients.length) throw new Error('No external patients returned');
+
+        patientStore = payload.patients;
+        usingExternalData = true;
+        externalApiBase = endpoint;
+        externalDataSourceLabel = buildExternalSourceLabel(payload);
+        return;
+      } catch (endpointError) {
+        lastError = endpointError;
+      }
+    }
+
+    throw lastError || new Error('No external patient endpoint succeeded');
   } catch (error) {
-    console.warn('Falling back to local patient data.', error);
-    patientStore = localPatients;
-    usingExternalData = false;
-
-    localPatients.forEach(p => {
-      patientDetailCache.set(String(p.id), p);
-    });
+    console.error('MCP patient load failed.', error);
+    patientStore = [];
+    usingExternalData = true;
+    externalApiBase = '/api/patients-mcp';
+    externalDataSourceLabel = '합성 FHIR MCP 연결 실패';
+    patientLoadError = error.message || 'MCP patient load failed';
   }
 }
 
@@ -89,7 +107,7 @@ function isUsingExternalData() {
 function updateDataSourceLabel() {
   const header = document.querySelector('.list-header');
   if (!header) return;
-  header.textContent = usingExternalData ? '환자목록 · 외부 FHIR' : '환자목록 · 데모';
+  header.textContent = `환자목록 · ${externalDataSourceLabel || '합성 FHIR MCP'}`;
 }
 
 function syncDateList(patient) {
@@ -106,7 +124,7 @@ async function getPatientData(pid) {
     return patientStore.find(pt => String(pt.id) === cacheKey) || null;
   }
 
-  const response = await fetch(`/api/patients?id=${encodeURIComponent(pid)}`);
+  const response = await fetch(`${externalApiBase}?id=${encodeURIComponent(pid)}`);
   if (!response.ok) {
     throw new Error(`External patient detail failed: ${response.status}`);
   }
@@ -151,15 +169,6 @@ window.handoffAppApi = {
 
 // 초기화
 document.addEventListener('DOMContentLoaded', function () {
-  if (false && typeof patients !== 'undefined' && patients.length > 0) {
-    if (patients[0].dailyData) {
-      dateList = Object.keys(patients[0].dailyData).sort();
-    }
-    renderPatientList();
-    setupUI();
-    setupAIRangeSelectors();
-    selectPatient(patients[0].id);
-  }
 });
 
 function setupUI() {
@@ -259,6 +268,15 @@ function updateDateDisplay() {
   const dateSel = document.getElementById('dateSelect');
   const prevBtn = document.getElementById('prevDateBtn');
   const nextBtn = document.getElementById('nextDateBtn');
+
+  if (!dateList.length || !dateStr) {
+    if (displayEl) displayEl.textContent = '-';
+    if (dDayEl) dDayEl.textContent = '대기 중';
+    if (dateSel) dateSel.value = '';
+    if (prevBtn) prevBtn.disabled = true;
+    if (nextBtn) nextBtn.disabled = true;
+    return;
+  }
 
   if (displayEl) displayEl.textContent = dateStr;
   if (dDayEl) {
@@ -1164,8 +1182,26 @@ async function selectPatient(pid) {
 }
 function renderPatientList() {
   const list = document.getElementById('patientList');
+  if (!list) return;
+  if (!patientStore.length) {
+    const errorText = patientLoadError
+      ? `합성 FHIR MCP 연결 실패<br><span class="pt-empty-detail">${escapeHtml(patientLoadError)}</span>`
+      : '표시할 환자 데이터가 없습니다.';
+    list.innerHTML = `<div class="pt-empty">${errorText}</div>`;
+    const counter = document.getElementById('patientCount');
+    if (counter) counter.textContent = '0';
+    return;
+  }
+
   list.innerHTML = patientStore.map(p => `<div class="pt-row" data-id="${p.id}" onclick="selectPatient('${p.id}')"><span class="room">${p.room || '-'}</span><span class="name">${p.name}</span></div>`).join('');
   document.getElementById('patientCount').textContent = patientStore.length;
+}
+
+function buildExternalSourceLabel(payload) {
+  const mode = String(payload?.mcp?.connectionMode || '').trim();
+  if (mode === 'server') return '합성 FHIR MCP 서버';
+  if (mode === 'direct-fallback') return '합성 FHIR MCP 게이트웨이';
+  return '합성 FHIR MCP';
 }
 function openAIPanel() { if (!selectedPatientId) return alert("환자선택필요"); document.getElementById('aiPanel').classList.add('active'); document.getElementById('overlay').classList.add('active'); aiPanelOpen = true; runAIRangeAnalysis(selectedPatientId); }
 function closeAIPanel() { document.getElementById('aiPanel').classList.remove('active'); document.getElementById('overlay').classList.remove('active'); aiPanelOpen = false; }

@@ -1,51 +1,178 @@
-# AI Handoff
+# AI-Assisted Nursing Handoff Demo
 
-This project generates and reviews handoff summaries for EMR-style patient data.
+Research prototype for explainable, AI-assisted nursing handoff summarization and prioritization.
 
-## Quick Start for Agents
+## Safety Status
 
-1. Read [AGENTS.md](AGENTS.md).
-2. Read the docs hub at [docs/README.md](docs/README.md).
-3. Use the canonical docs there before opening supplemental or historical documents.
-4. Validate changes with `npm test`.
+- Demo and research prototype only
+- Not for clinical use
+- Not a diagnostic or treatment system
+- Synthetic data only
+- Do not upload, paste, or test with real patient data or PHI
 
-## Repository Map
+## What This Repo Demonstrates
 
-- `docs/`
-  - canonical docs, supplemental harness docs, and historical references
+This project shows how MCP-delivered synthetic patient timeline data can be turned into:
+
+- a longitudinal patient summary
+- handoff-relevant changes
+- prioritized nursing handoff items
+- structured output that can later support SBAR-style rendering
+
+The current demo runtime is built on an MCP-backed public synthetic FHIR adapter. The long-term goal is to keep the core handoff logic stable even if the input source changes.
+
+## Public-Release Data Policy
+
+- Runtime patient intake is MCP-first and public synthetic FHIR only.
+- External FHIR integration targets a public synthetic sandbox.
+- Any patient-like identity returned by external synthetic FHIR data is converted to a clearly synthetic label before display.
+- No private hospital endpoints, secrets, or production credentials belong in this repository.
+- External FHIR access is restricted to an allowlisted public synthetic base URL.
+- Local synthetic fixture data is kept only for harness and regression testing, not for browser runtime display.
+
+Read:
+
+- [DISCLAIMER.md](DISCLAIMER.md)
+- [PRIVACY.md](PRIVACY.md)
+- [FEEDBACK.md](FEEDBACK.md)
+- [RELEASE_READINESS.md](RELEASE_READINESS.md)
+
+## Quick Start
+
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Run validation
+
+```bash
+npm test
+```
+
+If PowerShell execution policy blocks `npm`, run:
+
+```bash
+node scripts/run-node-tests.js
+```
+
+### 3. Open the demo
+
+Use your preferred static server or Netlify dev flow to serve the root app files and Netlify functions.
+
+Main entrypoints:
+
+- `index.html` for the EMR-style demo
+- `algorithm-demo.html` for the algorithm-focused demo
+
+### 4. Start the local MCP server directly
+
+```bash
+npm run mcp:server
+```
+
+### 5. Verify direct MCP stdio mode
+
+```bash
+npm run test:mcp:stdio
+```
+
+## Architecture Overview
+
+```mermaid
+flowchart LR
+    A["Public synthetic FHIR sandbox"] --> B["MCP-backed data access layer"]
+    B --> C["Normalization"]
+    C --> D["Longitudinal patient summary"]
+    D --> E["Change detection"]
+    E --> F["Prioritization"]
+    F --> G["Handoff-ready structured output"]
+```
+
+### Runtime Layers
+
+- Browser app
+  - UI and rendering
+- Netlify function layer
+  - patient data access
+  - synthetic FHIR adapter
+  - MCP-backed data gateway
+- Handoff engine
+  - normalization
+  - summary logic
+  - handoff analysis
+- Harness and tests
+  - regression and smoke validation
+
+See:
+
+- [docs/architecture.md](docs/architecture.md)
+- [docs/product-spec.md](docs/product-spec.md)
+- [docs/mcp-fhir-integration.md](docs/mcp-fhir-integration.md)
+
+## Repo Map
+
+- `script.js`
+  - browser-side handoff engine and MCP-backed app logic
+- `stage2-overrides.js`
+  - stage 2 rendering and summary behavior overrides
+- `stage2-period-overrides.js`
+  - selected-range summary behavior
+- `netlify/functions/`
+  - patient data adapters
 - `src/`
-  - shared harness code used by tests and Node-based tooling
+  - harness, MCP runtime, and synthetic test fixtures
 - `tests/`
-  - golden regression tests, smoke tests, and fixtures
-- root browser files
-  - `script.js`, `stage2-overrides.js`, `stage2-period-overrides.js`
+  - regression, smoke, and batch validation
+- `docs/`
+  - product, architecture, and release context
 
-## Harness Workflow
-
-1. Load the browser-side handoff engine through the shared VM harness in `src/harness/runtime/`.
-2. Use local fixtures or FHIR-backed patient helpers from the harness runtime.
-3. Run `npm test` to validate regression, smoke, batch, and render behavior.
-
-## Validation
+## Validation Commands
 
 - `npm test`
-  - Runs the full harness suite.
+  - full test suite
+- `npm run test:mcp`
+  - MCP patient smoke test
+- `npm run test:mcp:gateway`
+  - gateway cache and fallback regression
 - `npm run test:stage2`
-  - Runs the Stage 2 summary regression test.
+  - stage 2 summary regression
 - `npm run test:fhir:smoke`
-  - Runs a single-patient FHIR smoke test.
+  - synthetic FHIR smoke test
 - `npm run test:fhir:batch`
-  - Runs the batch FHIR validation pass.
+  - synthetic FHIR batch validation
 - `npm run test:render`
-  - Runs the narrative SBAR render smoke test.
+  - render smoke test
 
-There are currently no dedicated lint, format, or build commands configured as repository truth.
+## Release Notes for Reviewers
 
-## Key Docs
+This repository is intended to be understandable to:
 
-- [Documentation Hub](docs/README.md)
-- [Product Spec](docs/product-spec.md)
-- [Architecture](docs/architecture.md)
-- [Current Plan](docs/current-plan.md)
-- [Decisions](docs/decisions.md)
-- [Glossary](docs/glossary.md)
+- developers reviewing architecture and testability
+- clinicians reviewing handoff relevance and explainability
+- healthcare AI reviewers reviewing safety boundaries and scope
+
+Key release boundaries:
+
+- no clinical deployment claim
+- no patient-care recommendation claim
+- no real patient data
+- no guarantee of medical completeness
+
+## Feedback
+
+Please use GitHub Issues or Discussions for:
+
+- summary quality feedback
+- safety and public-release concerns
+- documentation clarity
+- architecture suggestions
+- synthetic data or labeling concerns
+
+Before sharing screenshots or logs, confirm they contain synthetic data only.
+
+Detailed guidance:
+
+- [FEEDBACK.md](FEEDBACK.md)
+- [docs/README.md](docs/README.md)

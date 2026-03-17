@@ -1,4 +1,9 @@
-const FHIR_BASE_URL = "https://r4.smarthealthit.org";
+const {
+  getPublicSafeFhirBaseUrl,
+  buildPublicDataPolicyMetadata
+} = require("../../src/mcp/runtime/publicDataPolicy");
+
+const FHIR_BASE_URL = getPublicSafeFhirBaseUrl();
 const DEFAULT_PATIENT_COUNT = 8;
 const TIMELINE_DAYS = 10;
 
@@ -17,6 +22,7 @@ exports.handler = async function handler(event) {
   try {
     const id = event.queryStringParameters && event.queryStringParameters.id;
     const requestedCount = event.queryStringParameters && event.queryStringParameters.count;
+    const requestedCursor = event.queryStringParameters && event.queryStringParameters.cursor;
     const patientCount = normalizePatientCount(requestedCount);
 
     if (id) {
@@ -24,8 +30,18 @@ exports.handler = async function handler(event) {
       return jsonResponse(200, detail);
     }
 
-    const patients = await fetchPatientList(patientCount);
-    return jsonResponse(200, { patients, source: "smart-health-it-sandbox" });
+    const page = await fetchPatientListPage({
+      count: patientCount,
+      cursor: requestedCursor
+    });
+    return jsonResponse(200, {
+      patients: page.patients,
+      source: "smart-health-it-sandbox-synthetic",
+      pageInfo: page.pageInfo,
+      policy: buildPublicDataPolicyMetadata({
+        selectedBaseUrl: FHIR_BASE_URL
+      })
+    });
   } catch (error) {
     return jsonResponse(500, {
       error: "FHIR 환자 정보를 가져오지 못했습니다.",
@@ -35,11 +51,33 @@ exports.handler = async function handler(event) {
 };
 
 async function fetchPatientList(count = DEFAULT_PATIENT_COUNT) {
-  const bundle = await fetchFHIR(`/Patient?_count=${count}&_elements=id,name,gender,birthDate`);
+  const page = await fetchPatientListPage({ count });
+  return page.patients;
+}
 
-  return (bundle.entry || [])
+async function fetchPatientListPage(options = {}) {
+  const count = normalizePatientCount(options.count);
+  const cursor = typeof options.cursor === "string" ? options.cursor : "";
+  const path = cursor
+    ? decodePatientCursor(cursor)
+    : `/Patient?_count=${count}&_elements=id,name,gender,birthDate`;
+  const bundle = await fetchFHIR(path);
+  const nextLink = findBundleLink(bundle, "next");
+  const nextPath = toFhirPath(nextLink);
+
+  const patients = (bundle.entry || [])
     .map((entry, index) => normalizePatientSummary(entry.resource, index))
     .filter(Boolean);
+
+  return {
+    patients,
+    pageInfo: {
+      count,
+      hasNext: Boolean(nextPath),
+      nextCursor: nextPath ? encodePatientCursor(nextPath) : "",
+      cursor: cursor || ""
+    }
+  };
 }
 
 function normalizePatientCount(value) {
@@ -97,7 +135,10 @@ async function fetchPatientDetail(id) {
 }
 
 async function fetchFHIR(path) {
-  const response = await fetch(`${FHIR_BASE_URL}${path}`, {
+  const targetUrl = /^https?:\/\//i.test(String(path || ""))
+    ? String(path)
+    : `${FHIR_BASE_URL}${path}`;
+  const response = await fetch(targetUrl, {
     headers: { accept: "application/fhir+json" }
   });
 
@@ -106,6 +147,35 @@ async function fetchFHIR(path) {
   }
 
   return response.json();
+}
+
+function findBundleLink(bundle, relation) {
+  return (bundle?.link || []).find((link) => link?.relation === relation)?.url || "";
+}
+
+function toFhirPath(url) {
+  const source = String(url || "").trim();
+  if (!source) return "";
+  if (source.startsWith(FHIR_BASE_URL)) {
+    return source.slice(FHIR_BASE_URL.length);
+  }
+  if (source.startsWith("/")) {
+    return source;
+  }
+  return source;
+}
+
+function encodePatientCursor(path) {
+  return Buffer.from(String(path || ""), "utf8").toString("base64url");
+}
+
+function decodePatientCursor(cursor) {
+  try {
+    const decoded = Buffer.from(String(cursor || ""), "base64url").toString("utf8");
+    return decoded || "";
+  } catch (error) {
+    throw new Error(`Invalid patient cursor: ${error.message}`);
+  }
 }
 
 async function safeFetchResources(path) {
@@ -122,9 +192,9 @@ function normalizePatientSummary(resource, index) {
 
   return {
     id: resource.id,
-    room: `FHIR-${String(index + 1).padStart(2, "0")}`,
-    name: formatHumanName(resource.name && resource.name[0]) || `환자 ${index + 1}`,
-    registrationNo: resource.id,
+    room: buildSyntheticRoomLabel(resource.id),
+    name: buildSyntheticPatientLabel(resource.id, index + 1),
+    registrationNo: buildSyntheticRegistrationNo(resource.id),
     gender: toGender(resource.gender),
     age: resource.birthDate ? String(calculateAge(resource.birthDate)) : "-",
     diagnosis: "외부 FHIR 환자",
@@ -182,16 +252,16 @@ function normalizePatientDetail(data) {
 
   return {
     id: data.patient.id,
-    room: encounterRoom(latestEncounter),
-    name: formatHumanName(data.patient.name && data.patient.name[0]) || "이름 없음",
-    registrationNo: data.patient.id,
+    room: buildSyntheticRoomLabel(data.patient.id),
+    name: buildSyntheticPatientLabel(data.patient.id),
+    registrationNo: buildSyntheticRegistrationNo(data.patient.id),
     gender: toGender(data.patient.gender),
     age: data.patient.birthDate ? String(calculateAge(data.patient.birthDate)) : "-",
     diagnosis: diagnosisList[0] || "FHIR 진단 정보 없음",
     admitDate: encounterDate(latestEncounter) || timelineDates[0],
     bloodType: findBloodType(observations),
     bodyInfo: buildBodyInfo(observationSummary.latestVital),
-    doctor: encounterDoctor(latestEncounter),
+    doctor: "FHIR Demo Care Team",
     isolation: findIsolation(serviceRequests, conditions, documents),
     admitReason: findAdmitReason(latestEncounter, diagnosisList, procedures),
     admissionNote: buildAdmissionNote(latestEncounter, diagnosisList, allergyList, procedureList, reportList, serviceRequests, documents),
@@ -199,7 +269,11 @@ function normalizePatientDetail(data) {
     allergies: allergyList,
     caution: allergyList[0] || findIsolation(serviceRequests, conditions, documents),
     dailyData,
-    external: true
+    external: true,
+    source: "smart-health-it-sandbox-synthetic",
+    policy: buildPublicDataPolicyMetadata({
+      selectedBaseUrl: FHIR_BASE_URL
+    })
   };
 }
 
@@ -1201,6 +1275,33 @@ function formatHumanName(name) {
   if (name.text) return name.text;
   const given = Array.isArray(name.given) ? name.given.join(" ") : "";
   return `${given} ${name.family || ""}`.trim();
+}
+
+function buildSyntheticPatientLabel(id, fallbackIndex = 0) {
+  return `Synthetic FHIR Patient ${buildSyntheticCode(id, fallbackIndex)}`;
+}
+
+function buildSyntheticRoomLabel(id) {
+  return `FHIR-DEMO-${buildSyntheticCode(id)}`;
+}
+
+function buildSyntheticRegistrationNo(id) {
+  return `FHIR-SYN-${buildSyntheticCode(id)}`;
+}
+
+function buildSyntheticCode(id, fallbackIndex = 0) {
+  const source = String(id || fallbackIndex || "0");
+  let hash = 0;
+
+  for (let index = 0; index < source.length; index += 1) {
+    hash = ((hash * 31) + source.charCodeAt(index)) % 10000;
+  }
+
+  if (!hash && fallbackIndex) {
+    hash = fallbackIndex;
+  }
+
+  return String(Math.abs(hash) || 1).padStart(4, "0");
 }
 
 function calculateAge(birthDate) {

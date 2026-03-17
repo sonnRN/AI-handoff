@@ -37,6 +37,17 @@ body {
   padding: 28px 32px 18px;
 }
 
+.engine-public-banner {
+  margin: 0 32px 18px;
+  padding: 12px 16px;
+  border: 1px solid #e0c36c;
+  background: #fff3cd;
+  color: #5c4300;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 .engine-eyebrow {
   font-size: 12px;
   letter-spacing: 0.18em;

@@ -613,7 +613,7 @@ class PatientGenerator {
 // 4. 환자별 시나리오 정의 및 데이터 생성 실행
 // ----------------------------------------------------------------------
 
-// === [Patient 1] 김태호: Septic Shock (Ventilator & C-line & Foley) ===
+// === [Patient 1] Synthetic Patient Alpha: Septic Shock Scenario ===
 const p1_gen = new PatientGenerator({ diagnosis: "Septic Shock" });
 DATES.forEach((d, i) => {
     let s = {};
@@ -698,7 +698,7 @@ DATES.forEach((d, i) => {
 });
 
 
-// === [Patient 2] 박미영: Rectal Ca (JP Drain & PCD) ===
+// === [Patient 2] Synthetic Patient Beta: Rectal Cancer Scenario ===
 const p2_gen = new PatientGenerator({ diagnosis: "Rectal Ca Op" });
 DATES.forEach((d, i) => {
     let s = {};
@@ -788,7 +788,7 @@ DATES.forEach((d, i) => {
 });
 
 
-// === [Patient 3] 이순자: Stroke & COPD (L-tube & Neuro Check) ===
+// === [Patient 3] Synthetic Patient Gamma: Stroke and COPD Scenario ===
 const p3_gen = new PatientGenerator({ diagnosis: "Stroke & COPD" });
 DATES.forEach((d, i) => {
     let s = {};
@@ -867,7 +867,7 @@ DATES.forEach((d, i) => {
 });
 
 
-// === [Patient 4] 정우성: Pancreatic Ca (PICC & Chemo) ===
+// === [Patient 4] Synthetic Patient Delta: Pancreatic Cancer Scenario ===
 const p4_gen = new PatientGenerator({ diagnosis: "Pancreatic Ca" });
 DATES.forEach((d, i) => {
     let s = {};
@@ -940,45 +940,90 @@ DATES.forEach((d, i) => {
 // 5. 최종 Export (p1_data, p2_data... 대체)
 // ----------------------------------------------------------------------
 // 최종 환자 리스트
-const patients = [
+const basePatients = [
     {
-        id: 1, name: "김태호", room: "512-1", registrationNo: "00964812", age: "65M", gender: "M", doctor: "김교수(Pulmo)",
+        id: 1, name: "Synthetic Patient Alpha", room: "SYN-ROOM-01", registrationNo: "SYN-0001", age: "65", gender: "M", doctor: "Demo Critical Care Team",
         diagnosis: "Septic Shock", admitDate: "2025-11-23", bloodType: "A+", bodyInfo: "172cm/70kg",
-        isolation: "Contact", admitReason: "S.Shock", admissionRoute: "ER", initialComplaint: "Fever & Hypotension",
-        admissionNote: "내원 3일 전부터 시작된 고열(39.2℃)과 오한, 호흡곤란을 주호소로 응급실 내원함. 내원 당시 BP 80/50mmHg, HR 125회/분 확인되어 S.Shock 진단 하에 Fluid Resuscitation 및 Norepinephrine 투여 시작함. Chest CT상 RLL Pneumonia 소견 보여 중환자실 입원함.",
-        opDate: "-", dischargeDate: "미정", religion: "무교", diet: "NPO (금식)",
-        pastHistory: ["HTN (10yrs)", "DM (5yrs)", "Tb (20yrs ago, cured)"],
+        isolation: "Contact", admitReason: "Synthetic sepsis scenario", admissionRoute: "ER", initialComplaint: "Fever & Hypotension",
+        admissionNote: "This is a synthetic research patient used for demo validation. Severe infection, hypotension, and pneumonia findings were generated to exercise high-acuity nursing handoff logic. No real patient information is included.",
+        opDate: "-", dischargeDate: "TBD", religion: "-", diet: "NPO (금식)",
+        pastHistory: ["Synthetic HTN history", "Synthetic DM history", "Synthetic treated TB history"],
         caution: "낙상주의",
         dailyData: p1_gen.dailyData
     },
     {
-        id: 2, name: "박미영", room: "508-2", registrationNo: "23456789", age: "52F", gender: "F", doctor: "이교수(GS)",
+        id: 2, name: "Synthetic Patient Beta", room: "SYN-ROOM-02", registrationNo: "SYN-0002", age: "52", gender: "F", doctor: "Demo Surgical Team",
         diagnosis: "Rectal Cancer", admitDate: "2025-11-24", bloodType: "O-", bodyInfo: "160cm/55kg",
-        isolation: "-", admitReason: "Op purpose", admissionRoute: "OPD", initialComplaint: "Scheduled Op",
-        admissionNote: "최근 건강검진 대장내시경에서 발견된 Rectal Mass에 대해 조직검사상 Adenocarcinoma 진단받음. 금번 Rectal Cancer에 대한 수술(LAR) 시행 위해 외래 통해 입원함. 특이 기왕력 없으며 수술 전 검사상 전이 소견 없음.",
-        opDate: "2025-11-25", dischargeDate: "2025-12-05 (예정)", religion: "기독교", diet: "SOW (오전 금식)",
-        pastHistory: ["Appendectomy (2000)", "No underlying disease"],
+        isolation: "-", admitReason: "Synthetic operation scenario", admissionRoute: "OPD", initialComplaint: "Scheduled synthetic operation",
+        admissionNote: "This is a synthetic research patient generated to test perioperative nursing handoff behavior. A rectal cancer surgery pathway is simulated for structured summary and carryover review. No real patient information is included.",
+        opDate: "2025-11-25", dischargeDate: "TBD", religion: "-", diet: "SOW (오전 금식)",
+        pastHistory: ["Synthetic appendectomy history", "Synthetic low-comorbidity profile"],
         caution: "낙상주의",
         dailyData: p2_gen.dailyData
     },
     {
-        id: 3, name: "최영수", room: "515-3", registrationNo: "34567890", age: "45M", gender: "M", doctor: "박교수(Neuro)",
-        diagnosis: "Cerebral Infraction", admitDate: "2025-11-25", bloodType: "B+", bodyInfo: "175cm/80kg",
-        isolation: "-", admitReason: "Dyspnea", admissionRoute: "ER", initialComplaint: "Lt. side weakness",
-        admissionNote: "금일 오전 9시경 기상 후 발견된 좌측 상하지 위약감(Grade 3) 및 구음장애(Dysarthria) 주호소로 응급실 내원함. Brain MRI상 Rt. MCA territory Acute Infraction 소견 보여 tPA 투여 후 경과 관찰 위해 입원함. 과거력상 흡연력(20갑년) 있음.",
-        opDate: "-", dischargeDate: "미정", religion: "불교", diet: "L-tube Feeding",
-        pastHistory: ["Hyperlipidemia", "Smoking (1pd * 20yrs)"],
+        id: 3, name: "Synthetic Patient Gamma", room: "SYN-ROOM-03", registrationNo: "SYN-0003", age: "45", gender: "M", doctor: "Demo Neuro Team",
+        diagnosis: "Cerebral Infarction", admitDate: "2025-11-25", bloodType: "B+", bodyInfo: "175cm/80kg",
+        isolation: "-", admitReason: "Synthetic neurologic deficit scenario", admissionRoute: "ER", initialComplaint: "Left-sided weakness",
+        admissionNote: "This is a synthetic research patient for neurologic handoff testing. Acute cerebral infarction findings, aspiration risk, and functional decline were generated to stress identity summary and monitoring logic. No real patient information is included.",
+        opDate: "-", dischargeDate: "TBD", religion: "-", diet: "L-tube Feeding",
+        pastHistory: ["Synthetic hyperlipidemia history", "Synthetic smoking exposure history"],
         caution: "낙상고위험",
         dailyData: p3_gen.dailyData
     },
     {
-        id: 4, name: "정우성", room: "520-1", registrationNo: "45678901", age: "72M", gender: "M", doctor: "최교수(Onco)",
+        id: 4, name: "Synthetic Patient Delta", room: "SYN-ROOM-04", registrationNo: "SYN-0004", age: "72", gender: "M", doctor: "Demo Oncology Team",
         diagnosis: "Pancreatic Cancer", admitDate: "2025-11-26", bloodType: "AB+", bodyInfo: "168cm/62kg",
-        isolation: "Reverse", admitReason: "Chemo", admissionRoute: "OPD", initialComplaint: "Admit for Chemo",
-        admissionNote: "2025년 5월 췌장암 4기(Liver meta) 진단받고 본원에서 항암치료 중인 환자로, 금번 3차 항암치료(Gemcitabine + Abraxane) 시행 위해 외래 통해 입원함. 최근 식욕부진 및 체중감소 호소하나 복통은 조절되는 상태임.",
-        opDate: "-", dischargeDate: "미정", religion: "천주교", diet: "General Diet",
-        pastHistory: ["Pancreatic Ca (Stg 4)", "Chemo 3rd cycle"],
+        isolation: "Reverse", admitReason: "Synthetic chemotherapy scenario", admissionRoute: "OPD", initialComplaint: "Scheduled synthetic chemotherapy admission",
+        admissionNote: "This is a synthetic research patient used to demonstrate oncology handoff patterns. Chemotherapy, infection risk, and nutrition follow-up are simulated for demo purposes only. No real patient information is included.",
+        opDate: "-", dischargeDate: "TBD", religion: "-", diet: "General Diet",
+        pastHistory: ["Synthetic pancreatic cancer history", "Synthetic chemotherapy cycle history"],
         caution: "화재주의",
         dailyData: p4_gen.dailyData
     }
 ];
+
+const SYNTHETIC_PATIENT_CODES = [
+    "Alpha", "Beta", "Gamma", "Delta", "Epsilon",
+    "Zeta", "Eta", "Theta", "Iota", "Kappa",
+    "Lambda", "Mu", "Nu", "Xi", "Omicron",
+    "Pi", "Rho", "Sigma", "Tau", "Upsilon"
+];
+
+const patients = expandSyntheticPatients(basePatients, 20);
+
+function expandSyntheticPatients(baseList, targetCount) {
+    const expanded = [];
+
+    for (let index = 0; index < targetCount; index += 1) {
+        const template = baseList[index % baseList.length];
+        const cycle = Math.floor(index / baseList.length);
+        const patientNumber = index + 1;
+        const clone = JSON.parse(JSON.stringify(template));
+        const code = SYNTHETIC_PATIENT_CODES[index] || `Case-${String(patientNumber).padStart(2, '0')}`;
+        const admitDate = shiftIsoDate(template.admitDate, cycle);
+        const ageValue = Number.parseInt(String(template.age || "0"), 10);
+
+        clone.id = patientNumber;
+        clone.name = `Synthetic Patient ${code}`;
+        clone.room = `SYN-ROOM-${String(patientNumber).padStart(2, '0')}`;
+        clone.registrationNo = `SYN-${String(patientNumber).padStart(4, '0')}`;
+        clone.age = Number.isFinite(ageValue) ? String(Math.max(19, ageValue + cycle)) : String(40 + patientNumber);
+        clone.doctor = `${template.doctor} ${cycle > 0 ? `Unit ${cycle + 1}` : "Unit 1"}`;
+        clone.admitDate = admitDate;
+        clone.dischargeDate = "TBD";
+        clone.admissionNote = `${template.admissionNote} Synthetic variant ${patientNumber} is used for public demo validation.`;
+        clone.external = false;
+
+        expanded.push(clone);
+    }
+
+    return expanded;
+}
+
+function shiftIsoDate(value, daysToAdd) {
+    const date = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return value;
+    date.setDate(date.getDate() + Number(daysToAdd || 0));
+    return date.toISOString().split('T')[0];
+}
