@@ -7,11 +7,23 @@ const FHIR_BASE_URL = getPublicSafeFhirBaseUrl();
 const DEFAULT_PATIENT_COUNT = 8;
 const TIMELINE_DAYS = 10;
 const FHIR_FETCH_TIMEOUT_MS = Math.max(1000, Number.parseInt(String(process.env.FHIR_FETCH_TIMEOUT_MS || "8000"), 10) || 8000);
+const PATIENT_BATCH_FETCH_SIZE = 20;
 const LIST_PAGE_FETCH_SIZE = 30;
 const MAX_LIST_FETCH_PAGES = 8;
 const BALANCED_POOL_MIN = 60;
 const BALANCED_POOL_PADDING = 24;
 const BALANCED_POOL_MAX = 100;
+const DEPARTMENT_SEED_SEARCHES = [
+  { department: "감염내과", term: "sepsis", count: 10 },
+  { department: "호흡기내과", term: "pneumonia", count: 10 },
+  { department: "순환기내과", term: "angina", count: 8 },
+  { department: "신경과", term: "stroke", count: 10 },
+  { department: "외과", term: "fracture", count: 10 },
+  { department: "종양내과", term: "cancer", count: 8 },
+  { department: "소화기내과", term: "gastritis", count: 6 },
+  { department: "재활의학과", term: "weakness", count: 6 },
+  { department: "이비인후과", term: "sinusitis", count: 4 }
+];
 const SYNTHETIC_WARD_LAYOUT = [
   { ward: "ICU", roomPrefix: "ICU", roomBase: 1, roomDigits: 2, doctorTeam: "Synthetic Critical Care Team" },
   { ward: "N병동", roomPrefix: "N", roomBase: 301, roomDigits: 3, doctorTeam: "Synthetic Neuro Team" },
@@ -138,13 +150,14 @@ function normalizePatientCount(value) {
 
 async function fetchPatientCandidatePool(options = {}) {
   const targetCount = Math.max(1, Number.parseInt(String(options.targetCount || BALANCED_POOL_MIN), 10) || BALANCED_POOL_MIN);
+  const seededResources = await fetchDepartmentSeedPatientResources(targetCount);
+  const seenIds = new Set(seededResources.map((resource) => String(resource?.id || "")).filter(Boolean));
   let nextPath = typeof options.cursor === "string" && options.cursor
     ? decodePatientCursor(options.cursor)
     : `/Patient?_count=${LIST_PAGE_FETCH_SIZE}&_elements=id,name,gender,birthDate`;
   let finalNextPath = "";
   let pageCount = 0;
   const pages = [];
-  const seenIds = new Set();
 
   while (nextPath && pageCount < MAX_LIST_FETCH_PAGES) {
     const bundle = await fetchFHIR(nextPath);
@@ -166,8 +179,10 @@ async function fetchPatientCandidatePool(options = {}) {
     pageCount += 1;
   }
 
+  const pagedResources = interleaveCandidatePages(pages, targetCount);
+
   return {
-    resources: interleaveCandidatePages(pages, targetCount),
+    resources: mergeUniqueResources([...seededResources, ...pagedResources]).slice(0, targetCount),
     nextPath: finalNextPath
   };
 }
@@ -189,6 +204,86 @@ function interleaveCandidatePages(pages, targetCount) {
   }
 
   return selected;
+}
+
+async function fetchDepartmentSeedPatientResources(targetCount) {
+  const seedGroups = new Map();
+  const selectedIds = [];
+  const selectedIdSet = new Set();
+
+  for (const search of DEPARTMENT_SEED_SEARCHES) {
+    const conditions = await safeFetchResources(
+      `/Condition?code:text=${encodeURIComponent(search.term)}&_count=${search.count}&_elements=subject,code`
+    );
+    const patientIds = unique(
+      conditions
+        .map((condition) => extractReferenceId(condition?.subject?.reference))
+        .filter(Boolean)
+    );
+    seedGroups.set(search.department, patientIds);
+  }
+
+  while (selectedIds.length < targetCount) {
+    let addedInRound = 0;
+
+    DEPARTMENT_SEED_SEARCHES.forEach((search) => {
+      if (selectedIds.length >= targetCount) return;
+      const group = seedGroups.get(search.department) || [];
+      while (group.length) {
+        const nextId = String(group.shift() || "").trim();
+        if (!nextId || selectedIdSet.has(nextId)) continue;
+        selectedIds.push(nextId);
+        selectedIdSet.add(nextId);
+        addedInRound += 1;
+        break;
+      }
+    });
+
+    if (!addedInRound) break;
+  }
+
+  return fetchPatientResourcesByIds(selectedIds);
+}
+
+async function fetchPatientResourcesByIds(ids) {
+  const resourceMap = new Map();
+  const safeIds = unique((ids || []).map((id) => String(id || "").trim()).filter(Boolean));
+
+  for (let index = 0; index < safeIds.length; index += PATIENT_BATCH_FETCH_SIZE) {
+    const batch = safeIds.slice(index, index + PATIENT_BATCH_FETCH_SIZE);
+    if (!batch.length) continue;
+    const bundle = await fetchFHIR(`/Patient?_id=${encodeURIComponent(batch.join(","))}&_count=${batch.length}&_elements=id,name,gender,birthDate`);
+    (bundle.entry || [])
+      .map((entry) => entry.resource)
+      .filter(Boolean)
+      .forEach((resource) => {
+        if (resource?.id) {
+          resourceMap.set(String(resource.id), resource);
+        }
+      });
+  }
+
+  return safeIds.map((id) => resourceMap.get(id)).filter(Boolean);
+}
+
+function extractReferenceId(reference) {
+  const source = String(reference || "").trim();
+  if (!source.includes("/")) return source || "";
+  return source.split("/").pop() || "";
+}
+
+function mergeUniqueResources(resources) {
+  const merged = [];
+  const seenIds = new Set();
+
+  (resources || []).forEach((resource) => {
+    const id = String(resource?.id || "").trim();
+    if (!id || seenIds.has(id)) return;
+    seenIds.add(id);
+    merged.push(resource);
+  });
+
+  return merged;
 }
 
 async function buildPatientListProfiles(resources) {
