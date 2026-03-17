@@ -1,6 +1,8 @@
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { ROOT } = require("../../harness/runtime/loadHandoffEngineApi");
+const { handler: upstreamPatientsHandler } = require("../../server/handlers/patientsApi");
 const {
   assertAllowedPublicPayload,
   isAllowedPublicPayloadSource
@@ -8,12 +10,12 @@ const {
 
 const DEFAULT_LIST_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_DETAIL_TTL_MS = 30 * 60 * 1000;
-const DEFAULT_CACHE_DIR = path.join(ROOT, ".cache", "fhir-mcp");
+const DEFAULT_CACHE_DIR = getDefaultCacheDir();
 
 let sharedGateway = null;
 
 function getUpstreamPatientsHandler() {
-  return require(path.join(ROOT, "src", "server", "handlers", "patientsApi.js")).handler;
+  return upstreamPatientsHandler;
 }
 
 function parseHandlerPayload(response) {
@@ -39,6 +41,14 @@ function ensureDir(directory) {
   fs.mkdirSync(directory, { recursive: true });
 }
 
+function getDefaultCacheDir() {
+  if (String(process.env.VERCEL || "") === "1") {
+    return path.join(os.tmpdir(), "fhir-mcp");
+  }
+
+  return path.join(ROOT, ".cache", "fhir-mcp");
+}
+
 function cacheFilePath(cacheDir, type, key) {
   return path.join(cacheDir, type, `${encodeURIComponent(String(key || "default"))}.json`);
 }
@@ -59,8 +69,11 @@ function readCache(cachePath, ttlMs, now) {
 }
 
 function writeCache(cachePath, payload) {
-  ensureDir(path.dirname(cachePath));
-  fs.writeFileSync(cachePath, JSON.stringify(payload, null, 2), "utf8");
+  try {
+    ensureDir(path.dirname(cachePath));
+    fs.writeFileSync(cachePath, JSON.stringify(payload, null, 2), "utf8");
+  } catch (error) {
+  }
 }
 
 function getSafeCachedPayload(cachedEntry) {
