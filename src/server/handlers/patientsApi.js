@@ -7,11 +7,11 @@ const FHIR_BASE_URL = getPublicSafeFhirBaseUrl();
 const DEFAULT_PATIENT_COUNT = 8;
 const TIMELINE_DAYS = 10;
 const FHIR_FETCH_TIMEOUT_MS = Math.max(1000, Number.parseInt(String(process.env.FHIR_FETCH_TIMEOUT_MS || "8000"), 10) || 8000);
-const LIST_PAGE_FETCH_SIZE = 40;
-const MAX_LIST_FETCH_PAGES = 3;
+const LIST_PAGE_FETCH_SIZE = 30;
+const MAX_LIST_FETCH_PAGES = 8;
 const BALANCED_POOL_MIN = 60;
 const BALANCED_POOL_PADDING = 24;
-const BALANCED_POOL_MAX = 90;
+const BALANCED_POOL_MAX = 100;
 const SYNTHETIC_WARD_LAYOUT = [
   { ward: "ICU", roomPrefix: "ICU", roomBase: 1, roomDigits: 2, doctorTeam: "Synthetic Critical Care Team" },
   { ward: "N병동", roomPrefix: "N", roomBase: 301, roomDigits: 3, doctorTeam: "Synthetic Neuro Team" },
@@ -143,18 +143,23 @@ async function fetchPatientCandidatePool(options = {}) {
     : `/Patient?_count=${LIST_PAGE_FETCH_SIZE}&_elements=id,name,gender,birthDate`;
   let finalNextPath = "";
   let pageCount = 0;
-  const resources = [];
+  const pages = [];
   const seenIds = new Set();
 
-  while (nextPath && resources.length < targetCount && pageCount < MAX_LIST_FETCH_PAGES) {
+  while (nextPath && pageCount < MAX_LIST_FETCH_PAGES) {
     const bundle = await fetchFHIR(nextPath);
     const entries = (bundle.entry || []).map((entry) => entry.resource).filter(Boolean);
+    const pageResources = [];
 
     entries.forEach((resource) => {
       if (!resource?.id || seenIds.has(String(resource.id))) return;
       seenIds.add(String(resource.id));
-      resources.push(resource);
+      pageResources.push(resource);
     });
+
+    if (pageResources.length) {
+      pages.push(pageResources);
+    }
 
     finalNextPath = toFhirPath(findBundleLink(bundle, "next"));
     nextPath = finalNextPath;
@@ -162,9 +167,28 @@ async function fetchPatientCandidatePool(options = {}) {
   }
 
   return {
-    resources,
+    resources: interleaveCandidatePages(pages, targetCount),
     nextPath: finalNextPath
   };
+}
+
+function interleaveCandidatePages(pages, targetCount) {
+  const queues = (pages || []).map((page) => page.slice());
+  const selected = [];
+
+  while (selected.length < targetCount) {
+    let addedInRound = 0;
+
+    queues.forEach((queue) => {
+      if (!queue.length || selected.length >= targetCount) return;
+      selected.push(queue.shift());
+      addedInRound += 1;
+    });
+
+    if (!addedInRound) break;
+  }
+
+  return selected;
 }
 
 async function buildPatientListProfiles(resources) {
