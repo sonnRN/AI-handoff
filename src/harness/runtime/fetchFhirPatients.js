@@ -4,9 +4,9 @@ const { buildLocalPatientSummaries, loadLocalDemoPatients } = require("./loadLoc
 
 function getPatientsHandler() {
   try {
-    return require(path.join(ROOT, "netlify", "functions", "patients-mcp.js")).handler;
+    return require(path.join(ROOT, "src", "server", "handlers", "patientsMcpApi.js")).handler;
   } catch (error) {
-    return require(path.join(ROOT, "netlify", "functions", "patients.js")).handler;
+    return require(path.join(ROOT, "src", "server", "handlers", "patientsApi.js")).handler;
   }
 }
 

@@ -19,7 +19,7 @@ This project shows how MCP-delivered synthetic patient timeline data can be turn
 - prioritized nursing handoff items
 - structured output that can later support SBAR-style rendering
 
-The current demo runtime is built on an MCP-backed public synthetic FHIR adapter. For GitHub Pages, a static public synthetic snapshot is included as a read-only fallback because GitHub Pages cannot run the MCP or Netlify server layer.
+The current demo runtime is built on an MCP-backed public synthetic FHIR adapter. For GitHub Pages, a static public synthetic snapshot is included as a read-only fallback because GitHub Pages cannot run the MCP or local server-handler layer.
 
 ## Public-Release Data Policy
 
@@ -60,7 +60,7 @@ node scripts/run-node-tests.js
 
 ### 3. Open the demo
 
-Use your preferred static server or Netlify dev flow to serve the root app files and Netlify functions.
+Use your preferred static server to serve the root app files. The browser runtime can use the public demo snapshot on GitHub Pages, and local tooling can call the server handler modules directly.
 
 Main entrypoints:
 
@@ -95,7 +95,7 @@ flowchart LR
 
 - Browser app
   - UI and rendering
-- Netlify function layer
+- server handler layer
   - patient data access
   - synthetic FHIR adapter
   - MCP-backed data gateway
@@ -120,8 +120,8 @@ See:
   - stage 2 rendering and summary behavior overrides
 - `stage2-period-overrides.js`
   - selected-range summary behavior
-- `netlify/functions/`
-  - patient data adapters
+- `src/server/handlers/`
+  - patient data handler modules
 - `src/`
   - harness, MCP runtime, and synthetic test fixtures
 - `tests/`

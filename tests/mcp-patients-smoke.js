@@ -1,4 +1,4 @@
-const patientsMcpHandler = require("../netlify/functions/patients-mcp.js").handler;
+const patientsMcpHandler = require("../src/server/handlers/patientsMcpApi.js").handler;
 
 async function main() {
   const listResponse = await patientsMcpHandler({

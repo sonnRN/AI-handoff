@@ -1,7 +1,7 @@
 const {
   getPublicSafeFhirBaseUrl,
   buildPublicDataPolicyMetadata
-} = require("../../src/mcp/runtime/publicDataPolicy");
+} = require("../../mcp/runtime/publicDataPolicy");
 
 const FHIR_BASE_URL = getPublicSafeFhirBaseUrl();
 const DEFAULT_PATIENT_COUNT = 8;

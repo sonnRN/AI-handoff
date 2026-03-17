@@ -13,7 +13,7 @@ const DEFAULT_CACHE_DIR = path.join(ROOT, ".cache", "fhir-mcp");
 let sharedGateway = null;
 
 function getUpstreamPatientsHandler() {
-  return require(path.join(ROOT, "netlify", "functions", "patients.js")).handler;
+  return require(path.join(ROOT, "src", "server", "handlers", "patientsApi.js")).handler;
 }
 
 function parseHandlerPayload(response) {

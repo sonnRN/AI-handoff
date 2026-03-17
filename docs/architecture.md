@@ -34,7 +34,7 @@ The harness runtime loads browser-side logic inside a VM sandbox so Node-based t
 - `src/harness/runtime/loadHandoffEngineApi.js`
   - loads browser engine files and returns `handoffAppApi`
 - `src/harness/runtime/fetchFhirPatients.js`
-  - fetches patient summaries/details through the Netlify function
+  - fetches patient summaries/details through the server handler modules
 - `src/harness/runtime/loadLocalDemoPatients.js`
   - synthetic fixture loader for harness-only regression tests
 - `src/mcp/runtime/patientDataGateway.js`

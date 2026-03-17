@@ -224,7 +224,7 @@ The current repository can evolve into this standalone demo without changing the
 Current mapping:
 
 - FHIR adapter and daily data creation:
-  [patients.js](../netlify/functions/patients.js)
+  [patientsApi.js](../src/server/handlers/patientsApi.js)
 
 - current UI and handoff rendering:
   [script.js](../script.js)

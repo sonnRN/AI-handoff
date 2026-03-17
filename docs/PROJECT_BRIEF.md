@@ -92,7 +92,7 @@
 
 현재 프로그램은 크게 두 층으로 나뉜다.
 
-- 서버/데이터 조립: `netlify/functions/patients.js`
+- 서버/데이터 조립: `src/server/handlers/patientsApi.js`
 - 프론트/SBAR 렌더링: `script.js`
 
 현재 구현의 목표 구조는 다음과 같다.

@@ -1,5 +1,5 @@
-const { getSharedFhirMcpClient } = require("../../src/mcp/client/fhirMcpClient");
-const { getSharedPatientDataGateway } = require("../../src/mcp/runtime/patientDataGateway");
+const { getSharedFhirMcpClient } = require("../../mcp/client/fhirMcpClient");
+const { getSharedPatientDataGateway } = require("../../mcp/runtime/patientDataGateway");
 
 function jsonResponse(statusCode, body) {
   return {
