@@ -123,16 +123,20 @@ function main() {
   assert.ok(analysis.groupedLowerPrioritySummary);
   assert.ok(analysis.departmentProfileUsed);
   assert.strictEqual(analysis.departmentProfileUsed.id, "neurology_ward");
+  assert.ok(analysis.changeEvents.some((item) => item.changeSubtype));
+  assert.ok(analysis.changeEvents.some((item) => item.profileSignal === "neurology_risk"));
 
   const topItem = analysis.prioritizedHandoffItems[0];
   assert.ok(topItem.priorityTierLabel);
   assert.ok(Array.isArray(topItem.priorityReasons));
   assert.ok(topItem.verification);
   assert.ok(topItem.departmentProfile);
+  assert.ok(topItem.changeSubtype);
 
   const heparinItem = analysis.prioritizedHandoffItems.find((item) => /Heparin/i.test(item.summary));
   assert.ok(heparinItem, "High-risk medication change should be prioritized");
   assert.ok(heparinItem.priorityTier <= 1, "High-risk medication should stay in an upper tier");
+  assert.strictEqual(heparinItem.flags.reportNeeded, true);
 
   assert.strictEqual(analysis.verificationResult.topTierEvidenceLinked, true);
 

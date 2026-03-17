@@ -37,3 +37,7 @@ The public repository should not expose realistic patient-like identities or amb
 ### Use department-based clinical profiles for stage 3+ prioritization
 
 Stage 3 and later handoff analysis now applies department-based profiles instead of broad ward labels. The canonical engine recognizes `medical_ward`, `surgical_ward`, `neurology_ward`, `oncology_ward`, `medical_icu`, and `surgical_icu`, while explicitly excluding emergency and operating-room workflows from the current scope. These profiles adjust tier promotion and explainability without changing the source-agnostic normalized snapshot contract.
+
+### Layer profile-specific change augmentation on top of legacy detection
+
+The current runtime keeps the existing date-based legacy detector as the base layer, then augments it with department-specific change signals before prioritization. This preserves compatibility with the older demo while adding clinically meaningful follow-up events for ICU support, surgical drain and wound checks, neurology aspiration risk, oncology blood-count and chemotherapy changes, and medical ward electrolyte or infection follow-up.

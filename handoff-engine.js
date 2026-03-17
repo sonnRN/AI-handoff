@@ -184,6 +184,7 @@
   }
 
   function detectNeedsReport(item, text) {
+    if ((item.type === "new_order" || item.type === "discontinued_order") && detectHighRiskMedication(text)) return true;
     if (item.type === "lab_change" && /(critical|high|low|이상 전환)/i.test(text)) return true;
     if (item.type === "vital_abnormal" && /(bp|hr|spo2|rr)/i.test(text)) return true;
     return /(report|notify|보고)/i.test(text);
@@ -503,6 +504,243 @@
     return canonicalizeLongitudinalSummary(summary, patient);
   }
 
+  function createSupplementalEvent(type, date, summary, detail, evidence, sbarSection, extra) {
+    return {
+      id: compactText(`${type}-${date}-${summary}`),
+      type,
+      date,
+      summary,
+      detail,
+      evidence: safeEvidenceList({ evidence }),
+      sbarSection,
+      source: "canonical-profile-detector",
+      ...extra
+    };
+  }
+
+  function eventText(item) {
+    return compactText(`${item?.summary || ""} ${item?.detail || ""} ${(item?.evidence || []).join(" ")}`);
+  }
+
+  function hasEvent(events, matcher) {
+    return (events || []).some((item) => matcher(item, eventText(item)));
+  }
+
+  function summaryContextTexts(longitudinalSummary) {
+    const sections = longitudinalSummary?.sections || {};
+    return Object.keys(sections)
+      .flatMap((key) => sections[key] || [])
+      .map((item) => compactText(`${item.summary || ""} ${item.detail || ""}`))
+      .filter(Boolean);
+  }
+
+  function getPendingActionTexts(current) {
+    const meta = current?.handoffMeta?.nursingActions || current?.nursingActions || {};
+    return unique([
+      ...(meta.pending || []),
+      ...(meta.followUp || [])
+    ]).map((item) => compactText(item));
+  }
+
+  function getNewItems(previousItems, currentItems) {
+    const before = new Set((previousItems || []).map((item) => compactText(item)));
+    return (currentItems || [])
+      .map((item) => compactText(item))
+      .filter(Boolean)
+      .filter((item) => !before.has(item));
+  }
+
+  function getAbnormalLabKeys(current) {
+    const abnormalEntries = current?.handoffMeta?.labs?.abnormal || current?.labs?.abnormal || [];
+    return abnormalEntries
+      .map((item) => compactText(item?.key || item?.label || ""))
+      .filter(Boolean);
+  }
+
+  function buildProfileSpecificChangeEvents(previous, current, longitudinalSummary, departmentProfile, existingEvents) {
+    if (!current || !departmentProfile) return [];
+
+    const events = [];
+    const pendingTexts = getPendingActionTexts(current);
+    const summaryTexts = summaryContextTexts(longitudinalSummary).join(" ");
+    const currentText = buildProfileText({ diagnosis: summaryTexts }, current);
+    const newRunningMeds = getNewItems(
+      previous?.handoffMeta?.orders?.medications?.running || previous?.orders?.medications?.running || [],
+      current?.handoffMeta?.orders?.medications?.running || current?.orders?.medications?.running || []
+    );
+    const newActiveOrders = getNewItems(
+      previous?.handoffMeta?.orders?.active || previous?.orders?.active || [],
+      current?.handoffMeta?.orders?.active || current?.orders?.active || []
+    );
+    const abnormalLabKeys = getAbnormalLabKeys(current);
+    const currentDate = safeSnapshotDate(current) || String(current?.date || "");
+
+    if (departmentProfile.id === "medical_icu") {
+      newRunningMeds
+        .filter((item) => detectHighRiskMedication(item))
+        .forEach((item) => {
+          if (!hasEvent(existingEvents, (event, text) => event.type === "new_order" && text.includes(item.toLowerCase()))) {
+            events.push(createSupplementalEvent(
+              "new_order",
+              currentDate,
+              `ICU 고위험 infusion 시작: ${item}`,
+              "내과계 ICU에서 바로 확인이 필요한 약물 support 변화입니다.",
+              [`order:${item}`],
+              "situation",
+              { profileSignal: "medical_icu_support" }
+            ));
+          }
+        });
+    }
+
+    if (departmentProfile.id === "surgical_ward" || departmentProfile.id === "surgical_icu") {
+      pendingTexts
+        .filter((item) => /(drain|bleeding|wound|dressing|hemovac|jp drain|배액|출혈|드레싱)/i.test(item))
+        .slice(0, 2)
+        .forEach((item) => {
+          if (!hasEvent(existingEvents, (_, text) => text.includes(item.toLowerCase()))) {
+            events.push(createSupplementalEvent(
+              "nursing_action",
+              currentDate,
+              `수술계 추적 필요: ${item}`,
+              "배액, 출혈, 상처 관련 후속 확인이 필요한 항목입니다.",
+              [`pending:${item}`],
+              "recommendation",
+              { profileSignal: "surgical_followup" }
+            ));
+          }
+        });
+    }
+
+    if (departmentProfile.id === "neurology_ward") {
+      const aspirationCaution = (current?.handoffMeta?.clinicalStatus?.caution || current?.clinicalStatus?.caution || [])
+        .map((item) => compactText(item))
+        .find((item) => /(aspiration|흡인)/i.test(item));
+      if (aspirationCaution && !hasEvent(existingEvents, (_, text) => /(aspiration|흡인)/i.test(text))) {
+        events.push(createSupplementalEvent(
+          "status_change",
+          currentDate,
+          `신경계 주의 강화: ${aspirationCaution}`,
+          "신경계 병동에서 흡인 위험은 다음 근무조가 계속 확인해야 하는 핵심 배경입니다.",
+          [`caution:${aspirationCaution}`],
+          "assessment",
+          { profileSignal: "neurology_risk" }
+        ));
+      }
+    }
+
+    if (departmentProfile.id === "oncology_ward") {
+      newActiveOrders
+        .filter((item) => /(chemo|chemotherapy|cisplatin|doxorubicin|cyclophosphamide|항암)/i.test(item))
+        .forEach((item) => {
+          if (!hasEvent(existingEvents, (_, text) => text.includes(item.toLowerCase()))) {
+            events.push(createSupplementalEvent(
+              "new_order",
+              currentDate,
+              `항암 관련 신규 오더: ${item}`,
+              "종양계 병동에서 항암 관련 변화는 우선 인계 대상입니다.",
+              [`order:${item}`],
+              "situation",
+              { profileSignal: "oncology_order" }
+            ));
+          }
+        });
+
+      if (abnormalLabKeys.some((key) => /(wbc|plt|platelet|hb|hgb)/i.test(key)) &&
+        !hasEvent(existingEvents, (event, text) => event.type === "lab_change" && /(wbc|plt|platelet|hb|hgb)/i.test(text))) {
+        const key = abnormalLabKeys.find((item) => /(wbc|plt|platelet|hb|hgb)/i.test(item));
+        events.push(createSupplementalEvent(
+          "lab_change",
+          currentDate,
+          `종양계 주의 검사 변화: ${key}`,
+          "혈액수치 변화는 감염 위험, 출혈 위험, 치료 지속 여부와 연결될 수 있어 후속 확인이 필요합니다.",
+          [`lab:${key}`],
+          "assessment",
+          { profileSignal: "oncology_lab" }
+        ));
+      }
+    }
+
+    if (departmentProfile.id === "medical_ward") {
+      pendingTexts
+        .filter((item) => /(sepsis|infection|electrolyte|glucose|dialysis|감염|패혈|전해질|혈당)/i.test(item))
+        .slice(0, 2)
+        .forEach((item) => {
+          if (!hasEvent(existingEvents, (_, text) => text.includes(item.toLowerCase()))) {
+            events.push(createSupplementalEvent(
+              "nursing_action",
+              currentDate,
+              `내과계 추적 필요: ${item}`,
+              "감염, 전해질, 대사 관련 follow-up은 다음 근무조가 이어받아야 합니다.",
+              [`pending:${item}`],
+              "recommendation",
+              { profileSignal: "medical_followup" }
+            ));
+          }
+        });
+    }
+
+    return events;
+  }
+
+  function deriveChangeSubtype(item) {
+    const text = eventText(item);
+    if (item.type === "new_order" || item.type === "discontinued_order") {
+      if (detectHighRiskMedication(text)) return "high-risk-medication";
+      if (/(oxygen|o2|vent|line|tube|drain|infusion|vasopressor)/i.test(text)) return "support-order";
+      return "order-change";
+    }
+    if (item.type === "status_change") {
+      if (/(oxygen|o2|vent)/i.test(text)) return "respiratory-support-change";
+      if (/(line|tube|drain|foley|peg|l-tube|jp drain|hemovac)/i.test(text)) return "device-change";
+      if (/(activity|bed rest|ambulation|absolute bed rest|보행|침상)/i.test(text)) return "activity-change";
+      if (/(isolation|contact|reverse|격리)/i.test(text)) return "precaution-change";
+      return "status-change";
+    }
+    if (item.type === "vital_abnormal") {
+      if (/(spo2|oxygen|o2|resp|rr)/i.test(text)) return "respiratory-vital";
+      if (/(bp|hr|shock|map)/i.test(text)) return "hemodynamic-vital";
+      return "vital-change";
+    }
+    if (item.type === "lab_change") {
+      if (/(k|na|electrolyte)/i.test(text)) return "electrolyte-lab";
+      if (/(wbc|crp|infection|fever)/i.test(text)) return "infection-lab";
+      if (/(hb|hgb|plt|platelet)/i.test(text)) return "hematology-lab";
+      if (/(cr|creatinine|bun)/i.test(text)) return "renal-lab";
+      return "lab-change";
+    }
+    if (item.type === "nursing_action") {
+      if (/(pending|follow|recheck|확인|추적)/i.test(text)) return "follow-up-action";
+      if (/(completed|수행)/i.test(text)) return "completed-action";
+      return "nursing-action";
+    }
+    return item.type || "unknown";
+  }
+
+  function buildClinicalContext(item, longitudinalSummary, departmentProfile) {
+    const summaryTexts = summaryContextTexts(longitudinalSummary);
+    const topContext = summaryTexts.slice(0, 2);
+    return {
+      departmentProfileId: departmentProfile?.id || "",
+      departmentProfileLabel: departmentProfile?.label || "",
+      summaryContext: topContext,
+      carriesBackground: /(background|배경)/i.test(String(item?.sbarSection || ""))
+    };
+  }
+
+  function augmentChangeEvents(rawChangeEvents, previous, current, longitudinalSummary, departmentProfile) {
+    const existingEvents = Array.isArray(rawChangeEvents) ? rawChangeEvents.slice() : [];
+    const supplementalEvents = buildProfileSpecificChangeEvents(previous, current, longitudinalSummary, departmentProfile, existingEvents);
+    const merged = [...existingEvents, ...supplementalEvents];
+    const seen = new Set();
+    return merged.filter((item) => {
+      const key = compactText(`${item.type}|${item.date}|${item.summary}|${item.detail}`);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
   function enrichPrioritizedItem(item, index, departmentProfile) {
     const tierInfo = classifyPriorityTier(item, departmentProfile);
     const priorityReasons = buildPriorityReasons(item, tierInfo);
@@ -510,6 +748,7 @@
     return {
       ...item,
       rank: index + 1,
+      changeSubtype: deriveChangeSubtype(item),
       priorityTier: tierInfo.tier,
       priorityTierLabel: tierInfo.label,
       priorityTierDescription: tierInfo.description,
@@ -524,22 +763,30 @@
         carryover: tierInfo.flags.carryover,
         highRiskMedicationRelated: tierInfo.flags.highRiskMedication,
         reportNeeded: tierInfo.flags.needsReport
-      }
+      },
+      profileReasons: tierInfo.profileReasons || []
     };
   }
 
-  function enrichChangeEvent(item, departmentProfile) {
+  function enrichChangeEvent(item, departmentProfile, longitudinalSummary) {
     const tierInfo = classifyPriorityTier(item, departmentProfile);
+    const clinicalContext = buildClinicalContext(item, longitudinalSummary, departmentProfile);
     return {
       ...item,
       category: item.type,
+      changeSubtype: deriveChangeSubtype(item),
       detectedFact: item.summary,
       handoffRelevance: buildActionRelevance(item, tierInfo),
       actionRelevance: buildActionRelevance(item, tierInfo),
       evidence: safeEvidenceList(item),
       priorityTier: tierInfo.tier,
       priorityTierLabel: tierInfo.label,
-      departmentProfile: departmentProfile || null
+      departmentProfile: departmentProfile || null,
+      departmentSensitivity: departmentProfile?.id || "",
+      reportNeeded: Boolean(tierInfo.flags.needsReport),
+      carryoverRelated: Boolean(tierInfo.flags.carryover),
+      highRiskContext: Boolean(tierInfo.flags.highRiskMedication),
+      clinicalContext
     };
   }
 
@@ -704,17 +951,25 @@
         ? legacy.detectHandoffChanges(previous, current, normalizedDailyTimeline[0] || null)
         : []);
 
+    const augmentedChangeEvents = augmentChangeEvents(
+      rawChangeEvents,
+      previous,
+      current,
+      longitudinalSummary,
+      departmentProfile
+    );
+
     const scoredItems = Array.isArray(legacyAnalysis?.prioritizedHandoffItems)
       ? legacyAnalysis.prioritizedHandoffItems
       : (legacy.scoreHandoffEvents
-        ? legacy.scoreHandoffEvents(rawChangeEvents, { current, previous, departmentProfile })
-        : rawChangeEvents);
+        ? legacy.scoreHandoffEvents(augmentedChangeEvents, { current, previous, departmentProfile, longitudinalSummary })
+        : augmentedChangeEvents);
 
     const prioritizedHandoffItems = sortPrioritizedItems(
       normalizeItemsForOutput(scoredItems.map((item, index) => enrichPrioritizedItem(item, index, departmentProfile)))
     );
 
-    const changeEvents = rawChangeEvents.map((item) => enrichChangeEvent(item, departmentProfile));
+    const changeEvents = augmentedChangeEvents.map((item) => enrichChangeEvent(item, departmentProfile, longitudinalSummary));
     const verificationResult = buildVerificationResult(prioritizedHandoffItems);
     const actionNeededItems = prioritizedHandoffItems.filter((item) => item.priorityTier <= 2);
     const carryoverItems = prioritizedHandoffItems.filter((item) => item.flags?.carryover);
