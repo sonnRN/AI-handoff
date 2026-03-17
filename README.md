@@ -19,12 +19,13 @@ This project shows how MCP-delivered synthetic patient timeline data can be turn
 - prioritized nursing handoff items
 - structured output that can later support SBAR-style rendering
 
-The current demo runtime is built on an MCP-backed public synthetic FHIR adapter. The long-term goal is to keep the core handoff logic stable even if the input source changes.
+The current demo runtime is built on an MCP-backed public synthetic FHIR adapter. For GitHub Pages, a static public synthetic snapshot is included as a read-only fallback because GitHub Pages cannot run the MCP or Netlify server layer.
 
 ## Public-Release Data Policy
 
 - Runtime patient intake is MCP-first and public synthetic FHIR only.
 - External FHIR integration targets a public synthetic sandbox.
+- GitHub Pages uses a committed public synthetic snapshot fallback when server routes are unavailable.
 - Any patient-like identity returned by external synthetic FHIR data is converted to a clearly synthetic label before display.
 - No private hospital endpoints, secrets, or production credentials belong in this repository.
 - External FHIR access is restricted to an allowlisted public synthetic base URL.

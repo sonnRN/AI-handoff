@@ -17,7 +17,8 @@ function main() {
   assert(!/src="patients\.js"/i.test(indexHtml), "index.html should not load local patients.js at runtime");
   assert(!/src="patients\.js"/i.test(algorithmDemoHtml), "algorithm-demo.html should not load local patients.js at runtime");
   assert(!/const localPatients\b/.test(scriptSource), "script.js should not keep a local patients runtime fallback");
-  assert(/const endpoints = \['\/api\/patients-mcp'\];/.test(scriptSource), "script.js should load patient data through patients-mcp only");
+  assert(/public-demo-data\/patients-bundle\.json/.test(scriptSource), "script.js should include the public demo bundle fallback");
+  assert(/api\/patients-mcp/.test(scriptSource), "script.js should keep the MCP API as the primary source");
   assert(/const fallbackHandler = typeof options\.fallbackHandler === "function" \? options\.fallbackHandler : null;/.test(gatewaySource), "patientDataGateway should require an explicit fallback handler");
   assert(!/createLocalFallbackHandler/.test(gatewaySource), "patientDataGateway should not create a built-in local demo fallback");
 

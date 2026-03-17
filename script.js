@@ -6,7 +6,7 @@ let currentDateIndex = 9;
 let dateList = [];
 let patientStore = [];
 let usingExternalData = false;
-let externalApiBase = '/api/patients-mcp';
+let externalApiBase = 'api/patients-mcp';
 let externalDataSourceLabel = '';
 let patientLoadError = '';
 const patientDetailCache = new Map();
@@ -55,7 +55,10 @@ async function initializeApp() {
 }
 
 async function loadPatientStore() {
-  const endpoints = ['/api/patients-mcp'];
+  const endpoints = [
+    { kind: 'mcp-api', url: 'api/patients-mcp' },
+    { kind: 'public-bundle', url: 'public-demo-data/patients-bundle.json' }
+  ];
 
   try {
     let lastError = null;
@@ -63,7 +66,10 @@ async function loadPatientStore() {
 
     for (const endpoint of endpoints) {
       try {
-        const response = await fetch(`${endpoint}?count=${PATIENT_LIST_COUNT}`);
+        const requestUrl = endpoint.kind === 'mcp-api'
+          ? `${endpoint.url}?count=${PATIENT_LIST_COUNT}`
+          : endpoint.url;
+        const response = await fetch(requestUrl);
         if (!response.ok) throw new Error(`External patient list failed: ${response.status}`);
 
         const payload = await response.json();
@@ -71,8 +77,9 @@ async function loadPatientStore() {
 
         patientStore = payload.patients;
         usingExternalData = true;
-        externalApiBase = endpoint;
+        externalApiBase = endpoint.url;
         externalDataSourceLabel = buildExternalSourceLabel(payload);
+        preloadPatientDetailCache(payload);
         return;
       } catch (endpointError) {
         lastError = endpointError;
@@ -84,7 +91,7 @@ async function loadPatientStore() {
     console.error('MCP patient load failed.', error);
     patientStore = [];
     usingExternalData = true;
-    externalApiBase = '/api/patients-mcp';
+    externalApiBase = 'api/patients-mcp';
     externalDataSourceLabel = '합성 FHIR MCP 연결 실패';
     patientLoadError = error.message || 'MCP patient load failed';
   }
@@ -120,7 +127,7 @@ async function getPatientData(pid) {
   const cacheKey = String(pid);
   if (patientDetailCache.has(cacheKey)) return patientDetailCache.get(cacheKey);
 
-  if (!usingExternalData) {
+  if (externalApiBase.endsWith('patients-bundle.json')) {
     return patientStore.find(pt => String(pt.id) === cacheKey) || null;
   }
 
@@ -1198,10 +1205,20 @@ function renderPatientList() {
 }
 
 function buildExternalSourceLabel(payload) {
+  if (payload?.source === 'github-pages-public-demo-snapshot') return 'GitHub Pages 정적 합성 FHIR 스냅샷';
   const mode = String(payload?.mcp?.connectionMode || '').trim();
   if (mode === 'server') return '합성 FHIR MCP 서버';
   if (mode === 'direct-fallback') return '합성 FHIR MCP 게이트웨이';
   return '합성 FHIR MCP';
+}
+
+function preloadPatientDetailCache(payload) {
+  const detailsById = payload?.detailsById || {};
+  Object.entries(detailsById).forEach(([id, detail]) => {
+    if (detail) {
+      patientDetailCache.set(String(id), detail);
+    }
+  });
 }
 function openAIPanel() { if (!selectedPatientId) return alert("환자선택필요"); document.getElementById('aiPanel').classList.add('active'); document.getElementById('overlay').classList.add('active'); aiPanelOpen = true; runAIRangeAnalysis(selectedPatientId); }
 function closeAIPanel() { document.getElementById('aiPanel').classList.remove('active'); document.getElementById('overlay').classList.remove('active'); aiPanelOpen = false; }
