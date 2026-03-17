@@ -14,15 +14,34 @@ const BALANCED_POOL_MIN = 60;
 const BALANCED_POOL_PADDING = 24;
 const BALANCED_POOL_MAX = 100;
 const DEPARTMENT_SEED_SEARCHES = [
-  { department: "감염내과", term: "sepsis", count: 10 },
-  { department: "호흡기내과", term: "pneumonia", count: 10 },
-  { department: "순환기내과", term: "angina", count: 8 },
-  { department: "신경과", term: "stroke", count: 10 },
-  { department: "외과", term: "fracture", count: 10 },
+  { department: "감염내과", term: "sepsis", count: 8 },
+  { department: "감염내과", term: "infection", count: 8 },
+  { department: "감염내과", term: "cellulitis", count: 6 },
+  { department: "호흡기내과", term: "pneumonia", count: 8 },
+  { department: "호흡기내과", term: "bronchitis", count: 8 },
+  { department: "호흡기내과", term: "asthma", count: 6 },
+  { department: "순환기내과", term: "angina", count: 6 },
+  { department: "순환기내과", term: "myocardial", count: 6 },
+  { department: "순환기내과", term: "arrhythmia", count: 4 },
+  { department: "신경과", term: "stroke", count: 8 },
+  { department: "신경과", term: "seizure", count: 6 },
+  { department: "신경과", term: "cerebral", count: 6 },
+  { department: "외과", term: "fracture", count: 8 },
+  { department: "외과", term: "hernia", count: 6 },
+  { department: "외과", term: "wound", count: 6 },
   { department: "종양내과", term: "cancer", count: 8 },
+  { department: "종양내과", term: "carcinoma", count: 6 },
+  { department: "종양내과", term: "neoplasm", count: 6 },
   { department: "소화기내과", term: "gastritis", count: 6 },
+  { department: "소화기내과", term: "colitis", count: 6 },
+  { department: "소화기내과", term: "pancreatitis", count: 4 },
+  { department: "내분비내과", term: "diabetes", count: 6 },
+  { department: "내분비내과", term: "thyroid", count: 4 },
+  { department: "신장비뇨의학과", term: "renal", count: 6 },
+  { department: "신장비뇨의학과", term: "urinary", count: 6 },
   { department: "재활의학과", term: "weakness", count: 6 },
-  { department: "이비인후과", term: "sinusitis", count: 4 }
+  { department: "재활의학과", term: "deconditioning", count: 4 },
+  { department: "이비인후과", term: "sinusitis", count: 3 }
 ];
 const SYNTHETIC_WARD_LAYOUT = [
   { ward: "ICU", roomPrefix: "ICU", roomBase: 1, roomDigits: 2, doctorTeam: "Synthetic Critical Care Team" },
@@ -220,7 +239,8 @@ async function fetchDepartmentSeedPatientResources(targetCount) {
         .map((condition) => extractReferenceId(condition?.subject?.reference))
         .filter(Boolean)
     );
-    seedGroups.set(search.department, patientIds);
+    const existingIds = seedGroups.get(search.department) || [];
+    seedGroups.set(search.department, unique([...existingIds, ...patientIds]));
   }
 
   while (selectedIds.length < targetCount) {
