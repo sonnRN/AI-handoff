@@ -45,6 +45,7 @@ function buildLocalPatientSummaries(patients) {
     registrationNo: patient.registrationNo || String(patient.id),
     gender: patient.gender || "-",
     age: patient.age || "-",
+    department: patient.department || "-",
     diagnosis: patient.diagnosis || "-",
     admitDate: patient.admitDate || "-",
     bloodType: patient.bloodType || "-",

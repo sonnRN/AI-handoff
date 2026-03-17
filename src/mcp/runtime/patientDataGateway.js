@@ -78,7 +78,21 @@ function writeCache(cachePath, payload) {
 
 function getSafeCachedPayload(cachedEntry) {
   if (!cachedEntry || !cachedEntry.payload) return null;
-  return isAllowedPublicPayloadSource(cachedEntry.payload.source) ? cachedEntry : null;
+  if (!isAllowedPublicPayloadSource(cachedEntry.payload.source)) return null;
+  if (!hasRequiredPatientFields(cachedEntry.payload)) return null;
+  return cachedEntry;
+}
+
+function hasRequiredPatientFields(payload) {
+  if (Array.isArray(payload?.patients) && payload.patients.length) {
+    return payload.patients.every((patient) => patient?.ward && patient?.department);
+  }
+
+  if (payload && payload.id) {
+    return Boolean(payload.ward) && Boolean(payload.department);
+  }
+
+  return true;
 }
 
 function withGatewayMetadata(payload, metadata = {}) {

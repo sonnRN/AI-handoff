@@ -7,6 +7,7 @@ const REQUIRED_HEADER_FIELDS = [
   "name",
   "room",
   "ward",
+  "department",
   "registrationNo",
   "gender",
   "age",
@@ -41,9 +42,11 @@ async function main() {
   assert(patients.every((patient) => patient.ward && patient.ward !== "ER"), "Patient summaries must include non-ER ward labels");
 
   const wardSet = new Set(patients.map((patient) => patient.ward));
+  const departmentSet = new Set(patients.map((patient) => patient.department));
   assert(wardSet.has("ICU"), "Patient list must include ICU patients");
   assert(wardSet.has("N병동"), "Patient list must include N병동 patients");
   assert(wardSet.size >= 5, "Patient list must be distributed across at least five wards");
+  assert(departmentSet.size >= 4, "Patient list must be distributed across at least four departments");
 
   const firstPatient = JSON.parse((await handler({ queryStringParameters: { id: String(patients[0].id) } })).body);
   const lastPatient = JSON.parse((await handler({ queryStringParameters: { id: String(patients[patients.length - 1].id) } })).body);
@@ -54,6 +57,7 @@ async function main() {
   console.log("EMR patient list 50 smoke test passed.");
   console.log(`List source count: ${patients.length}`);
   console.log(`Ward groups: ${Array.from(wardSet).sort().join(", ")}`);
+  console.log(`Departments: ${Array.from(departmentSet).sort().join(", ")}`);
   console.log(`First patient: ${firstPatient.name} (${firstPatient.id})`);
   console.log(`Last patient: ${lastPatient.name} (${lastPatient.id})`);
 }

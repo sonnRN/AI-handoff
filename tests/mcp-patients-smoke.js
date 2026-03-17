@@ -12,6 +12,11 @@ async function main() {
     throw new Error("MCP patient list did not return any patients");
   }
 
+  const departmentSet = new Set((listPayload.patients || []).map((patient) => patient.department).filter(Boolean));
+  if (departmentSet.size < 4) {
+    throw new Error("MCP patient list is not distributed across enough departments");
+  }
+
   if (!listPayload.mcp || listPayload.mcp.transport !== "local-fhir-mcp") {
     throw new Error("MCP metadata is missing from the patient list payload");
   }
@@ -52,6 +57,7 @@ async function main() {
   console.log(`Patient source: ${detailPayload.source}`);
   console.log(`Cache mode: ${detailPayload.mcp.cache}`);
   console.log(`Connection mode: ${detailPayload.mcp.connectionMode}`);
+  console.log(`Departments: ${Array.from(departmentSet).sort().join(", ")}`);
 }
 
 main().catch((error) => {

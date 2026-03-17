@@ -943,7 +943,7 @@ DATES.forEach((d, i) => {
 const basePatients = [
     {
         id: 1, name: "Synthetic Patient Alpha", room: "SYN-ROOM-01", registrationNo: "SYN-0001", age: "65", gender: "M", doctor: "Demo Critical Care Team",
-        diagnosis: "Septic Shock", admitDate: "2025-11-23", bloodType: "A+", bodyInfo: "172cm/70kg",
+        diagnosis: "Septic Shock", department: "감염내과", admitDate: "2025-11-23", bloodType: "A+", bodyInfo: "172cm/70kg",
         isolation: "Contact", admitReason: "Synthetic sepsis scenario", admissionRoute: "ER", initialComplaint: "Fever & Hypotension",
         admissionNote: "This is a synthetic research patient used for demo validation. Severe infection, hypotension, and pneumonia findings were generated to exercise high-acuity nursing handoff logic. No real patient information is included.",
         opDate: "-", dischargeDate: "TBD", religion: "-", diet: "NPO (금식)",
@@ -953,7 +953,7 @@ const basePatients = [
     },
     {
         id: 2, name: "Synthetic Patient Beta", room: "SYN-ROOM-02", registrationNo: "SYN-0002", age: "52", gender: "F", doctor: "Demo Surgical Team",
-        diagnosis: "Rectal Cancer", admitDate: "2025-11-24", bloodType: "O-", bodyInfo: "160cm/55kg",
+        diagnosis: "Rectal Cancer", department: "외과", admitDate: "2025-11-24", bloodType: "O-", bodyInfo: "160cm/55kg",
         isolation: "-", admitReason: "Synthetic operation scenario", admissionRoute: "OPD", initialComplaint: "Scheduled synthetic operation",
         admissionNote: "This is a synthetic research patient generated to test perioperative nursing handoff behavior. A rectal cancer surgery pathway is simulated for structured summary and carryover review. No real patient information is included.",
         opDate: "2025-11-25", dischargeDate: "TBD", religion: "-", diet: "SOW (오전 금식)",
@@ -963,7 +963,7 @@ const basePatients = [
     },
     {
         id: 3, name: "Synthetic Patient Gamma", room: "SYN-ROOM-03", registrationNo: "SYN-0003", age: "45", gender: "M", doctor: "Demo Neuro Team",
-        diagnosis: "Cerebral Infarction", admitDate: "2025-11-25", bloodType: "B+", bodyInfo: "175cm/80kg",
+        diagnosis: "Cerebral Infarction", department: "신경과", admitDate: "2025-11-25", bloodType: "B+", bodyInfo: "175cm/80kg",
         isolation: "-", admitReason: "Synthetic neurologic deficit scenario", admissionRoute: "ER", initialComplaint: "Left-sided weakness",
         admissionNote: "This is a synthetic research patient for neurologic handoff testing. Acute cerebral infarction findings, aspiration risk, and functional decline were generated to stress identity summary and monitoring logic. No real patient information is included.",
         opDate: "-", dischargeDate: "TBD", religion: "-", diet: "L-tube Feeding",
@@ -973,7 +973,7 @@ const basePatients = [
     },
     {
         id: 4, name: "Synthetic Patient Delta", room: "SYN-ROOM-04", registrationNo: "SYN-0004", age: "72", gender: "M", doctor: "Demo Oncology Team",
-        diagnosis: "Pancreatic Cancer", admitDate: "2025-11-26", bloodType: "AB+", bodyInfo: "168cm/62kg",
+        diagnosis: "Pancreatic Cancer", department: "종양내과", admitDate: "2025-11-26", bloodType: "AB+", bodyInfo: "168cm/62kg",
         isolation: "Reverse", admitReason: "Synthetic chemotherapy scenario", admissionRoute: "OPD", initialComplaint: "Scheduled synthetic chemotherapy admission",
         admissionNote: "This is a synthetic research patient used to demonstrate oncology handoff patterns. Chemotherapy, infection risk, and nutrition follow-up are simulated for demo purposes only. No real patient information is included.",
         opDate: "-", dischargeDate: "TBD", religion: "-", diet: "General Diet",
@@ -1024,6 +1024,7 @@ function expandSyntheticPatients(baseList, targetCount) {
         clone.room = wardAssignment.room;
         clone.registrationNo = `SYN-${String(patientNumber).padStart(4, '0')}`;
         clone.age = Number.isFinite(ageValue) ? String(Math.max(19, ageValue + cycle)) : String(40 + patientNumber);
+        clone.department = template.department || "일반내과";
         clone.doctor = `${wardAssignment.doctorTeam} ${cycle > 0 ? `Unit ${cycle + 1}` : "Unit 1"}`;
         clone.admitDate = admitDate;
         clone.dischargeDate = "TBD";

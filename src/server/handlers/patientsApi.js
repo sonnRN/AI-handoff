@@ -7,6 +7,11 @@ const FHIR_BASE_URL = getPublicSafeFhirBaseUrl();
 const DEFAULT_PATIENT_COUNT = 8;
 const TIMELINE_DAYS = 10;
 const FHIR_FETCH_TIMEOUT_MS = Math.max(1000, Number.parseInt(String(process.env.FHIR_FETCH_TIMEOUT_MS || "8000"), 10) || 8000);
+const LIST_PAGE_FETCH_SIZE = 40;
+const MAX_LIST_FETCH_PAGES = 3;
+const BALANCED_POOL_MIN = 60;
+const BALANCED_POOL_PADDING = 24;
+const BALANCED_POOL_MAX = 90;
 const SYNTHETIC_WARD_LAYOUT = [
   { ward: "ICU", roomPrefix: "ICU", roomBase: 1, roomDigits: 2, doctorTeam: "Synthetic Critical Care Team" },
   { ward: "N병동", roomPrefix: "N", roomBase: 301, roomDigits: 3, doctorTeam: "Synthetic Neuro Team" },
@@ -66,23 +71,23 @@ async function fetchPatientList(count = DEFAULT_PATIENT_COUNT) {
 async function fetchPatientListPage(options = {}) {
   const count = normalizePatientCount(options.count);
   const cursor = typeof options.cursor === "string" ? options.cursor : "";
-  const path = cursor
-    ? decodePatientCursor(cursor)
-    : `/Patient?_count=${count}&_elements=id,name,gender,birthDate`;
-  const bundle = await fetchFHIR(path);
-  const nextLink = findBundleLink(bundle, "next");
-  const nextPath = toFhirPath(nextLink);
-
-  const patients = (bundle.entry || [])
-    .map((entry, index) => normalizePatientSummary(entry.resource, index))
-    .filter(Boolean);
+  const poolTargetCount = Math.min(
+    Math.max(count + BALANCED_POOL_PADDING, BALANCED_POOL_MIN),
+    BALANCED_POOL_MAX
+  );
+  const candidatePool = await fetchPatientCandidatePool({
+    cursor,
+    targetCount: poolTargetCount
+  });
+  const profiles = await buildPatientListProfiles(candidatePool.resources);
+  const patients = selectBalancedPatientProfiles(profiles, count);
 
   return {
     patients,
     pageInfo: {
       count,
-      hasNext: Boolean(nextPath),
-      nextCursor: nextPath ? encodePatientCursor(nextPath) : "",
+      hasNext: Boolean(candidatePool.nextPath),
+      nextCursor: candidatePool.nextPath ? encodePatientCursor(candidatePool.nextPath) : "",
       cursor: cursor || ""
     }
   };
@@ -92,6 +97,109 @@ function normalizePatientCount(value) {
   const parsed = Number.parseInt(String(value || DEFAULT_PATIENT_COUNT), 10);
   if (!Number.isFinite(parsed)) return DEFAULT_PATIENT_COUNT;
   return Math.max(1, Math.min(parsed, 50));
+}
+
+async function fetchPatientCandidatePool(options = {}) {
+  const targetCount = Math.max(1, Number.parseInt(String(options.targetCount || BALANCED_POOL_MIN), 10) || BALANCED_POOL_MIN);
+  let nextPath = typeof options.cursor === "string" && options.cursor
+    ? decodePatientCursor(options.cursor)
+    : `/Patient?_count=${LIST_PAGE_FETCH_SIZE}&_elements=id,name,gender,birthDate`;
+  let finalNextPath = "";
+  let pageCount = 0;
+  const resources = [];
+  const seenIds = new Set();
+
+  while (nextPath && resources.length < targetCount && pageCount < MAX_LIST_FETCH_PAGES) {
+    const bundle = await fetchFHIR(nextPath);
+    const entries = (bundle.entry || []).map((entry) => entry.resource).filter(Boolean);
+
+    entries.forEach((resource) => {
+      if (!resource?.id || seenIds.has(String(resource.id))) return;
+      seenIds.add(String(resource.id));
+      resources.push(resource);
+    });
+
+    finalNextPath = toFhirPath(findBundleLink(bundle, "next"));
+    nextPath = finalNextPath;
+    pageCount += 1;
+  }
+
+  return {
+    resources,
+    nextPath: finalNextPath
+  };
+}
+
+async function buildPatientListProfiles(resources) {
+  return mapInBatches(resources || [], 8, async (resource, index) => {
+    const summary = normalizePatientSummary(resource, index);
+    if (!summary) return null;
+
+    const conditions = await safeFetchResources(`/Condition?patient=${encodeURIComponent(resource.id)}&_count=12`);
+    const diagnosisList = unique(sortDesc(conditions, conditionDate).map(conditionLabel)).slice(0, 4);
+    const department = inferClinicalDepartment(diagnosisList);
+
+    return {
+      ...summary,
+      department,
+      diagnosis: diagnosisList[0] || `${department} synthetic case`,
+      doctor: buildSyntheticDoctorTeam(department, summary.ward)
+    };
+  }).then((items) => items.filter(Boolean));
+}
+
+async function mapInBatches(items, batchSize, mapper) {
+  const results = [];
+
+  for (let index = 0; index < items.length; index += batchSize) {
+    const batch = items.slice(index, index + batchSize);
+    const batchResults = await Promise.all(batch.map((item, batchIndex) => mapper(item, index + batchIndex)));
+    results.push(...batchResults);
+  }
+
+  return results;
+}
+
+function selectBalancedPatientProfiles(profiles, count) {
+  const groups = new Map();
+
+  (profiles || []).forEach((profile) => {
+    const department = String(profile?.department || "일반내과").trim() || "일반내과";
+    if (!groups.has(department)) groups.set(department, []);
+    groups.get(department).push(profile);
+  });
+
+  const orderedDepartments = Array.from(groups.keys()).sort((left, right) => {
+    const sizeDelta = groups.get(right).length - groups.get(left).length;
+    if (sizeDelta !== 0) return sizeDelta;
+    return String(left).localeCompare(String(right), "ko");
+  });
+
+  orderedDepartments.forEach((department) => {
+    groups.get(department).sort((left, right) => {
+      return buildStablePatientSortKey(left.id).localeCompare(buildStablePatientSortKey(right.id), "en");
+    });
+  });
+
+  const selected = [];
+  while (selected.length < count) {
+    let addedInRound = 0;
+
+    orderedDepartments.forEach((department) => {
+      const nextPatient = groups.get(department).shift();
+      if (!nextPatient || selected.length >= count) return;
+      selected.push(nextPatient);
+      addedInRound += 1;
+    });
+
+    if (!addedInRound) break;
+  }
+
+  return selected.slice(0, count);
+}
+
+function buildStablePatientSortKey(id) {
+  return buildSyntheticCode(id);
 }
 
 async function fetchPatientDetail(id) {
@@ -221,11 +329,12 @@ function normalizePatientSummary(resource, index) {
     registrationNo: buildSyntheticRegistrationNo(resource.id),
     gender: toGender(resource.gender),
     age: resource.birthDate ? String(calculateAge(resource.birthDate)) : "-",
+    department: "일반내과",
     diagnosis: "외부 FHIR 환자",
     admitDate: "-",
     bloodType: "-",
     bodyInfo: "-",
-    doctor: wardAssignment.doctorTeam,
+    doctor: buildSyntheticDoctorTeam("일반내과", wardAssignment.ward),
     isolation: "-",
     external: true
   };
@@ -244,6 +353,7 @@ function normalizePatientDetail(data) {
   const documents = sortDesc(data.documents, documentDate);
 
   const diagnosisList = unique(conditions.map(conditionLabel)).slice(0, 10);
+  const department = inferClinicalDepartment(diagnosisList);
   const pastHistory = unique(conditions.map(conditionHistoryLabel)).slice(0, 10);
   const allergyList = unique(data.allergies.map(allergyLabel)).slice(0, 10);
   const procedureList = unique(procedures.map(procedureLabel)).slice(0, 10);
@@ -284,11 +394,12 @@ function normalizePatientDetail(data) {
     registrationNo: buildSyntheticRegistrationNo(data.patient.id),
     gender: toGender(data.patient.gender),
     age: data.patient.birthDate ? String(calculateAge(data.patient.birthDate)) : "-",
+    department,
     diagnosis: diagnosisList[0] || "FHIR 진단 정보 없음",
     admitDate: encounterDate(latestEncounter) || timelineDates[0],
     bloodType: findBloodType(observations),
     bodyInfo: buildBodyInfo(observationSummary.latestVital),
-    doctor: wardAssignment.doctorTeam,
+    doctor: buildSyntheticDoctorTeam(department, wardAssignment.ward),
     isolation: findIsolation(serviceRequests, conditions, documents),
     admitReason: findAdmitReason(latestEncounter, diagnosisList, procedures),
     admissionNote: buildAdmissionNote(latestEncounter, diagnosisList, allergyList, procedureList, reportList, serviceRequests, documents),
@@ -664,6 +775,53 @@ function normalizeClinicalText(text) {
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+}
+
+function inferClinicalDepartment(diagnosisList) {
+  const source = normalizeClinicalText((diagnosisList || []).join(" / "));
+  if (!source) return "일반내과";
+
+  if (/stroke|cerebral|concussion|brain|neuro|seizure|hemiplegia|aphasia|parkinson|dementia/.test(source)) {
+    return "신경과";
+  }
+
+  if (/sinusitis|pharyngitis|tonsillitis|otitis|rhinitis|laryng|bronchitis|pneumonia|copd|asthma/.test(source)) {
+    return /sinusitis|pharyngitis|tonsillitis|otitis|rhinitis|laryng/.test(source) ? "이비인후과" : "호흡기내과";
+  }
+
+  if (/cancer|carcinoma|neoplasm|tumor|lymphoma|leukemia|pancreatic ca|rectal ca/.test(source)) {
+    return "종양내과";
+  }
+
+  if (/fracture|sprain|strain|injury|trauma|whiplash|laceration|wound|postop|post-op|surgery|hernia|appendic|arthr|joint|spine/.test(source)) {
+    return "외과";
+  }
+
+  if (/kidney|renal|uti|urinary|pyeloneph|prostate|bladder/.test(source)) {
+    return "신장비뇨의학과";
+  }
+
+  if (/diabetes|thyroid|adrenal|hyperglycemia|hypoglycemia/.test(source)) {
+    return "내분비내과";
+  }
+
+  if (/angina|myocard|heart failure|arrhythm|coronary|cardiac/.test(source)) {
+    return "순환기내과";
+  }
+
+  if (/hepatitis|cirrhosis|gastritis|colitis|crohn|ulcer|liver|pancreatitis|bowel|rectal|colon|abdomen/.test(source)) {
+    return "소화기내과";
+  }
+
+  if (/infection|sepsis|cellulitis|fever|abscess/.test(source)) {
+    return "감염내과";
+  }
+
+  if (/rehab|gait|deconditioning|mobility|self care deficit|weakness/.test(source)) {
+    return "재활의학과";
+  }
+
+  return "일반내과";
 }
 
 function buildHourlyTimeline(date, dayVital, events) {
@@ -1411,6 +1569,14 @@ function buildSyntheticWardAssignment(id, fallbackIndex = 0) {
     room: `${wardSpec.roomPrefix}-${roomNumber}`,
     doctorTeam: wardSpec.doctorTeam
   };
+}
+
+function buildSyntheticDoctorTeam(department, ward) {
+  const safeDepartment = String(department || "").trim();
+  const safeWard = String(ward || "").trim();
+  if (safeDepartment) return `Synthetic ${safeDepartment} Team`;
+  if (safeWard) return `Synthetic ${safeWard} Team`;
+  return "Synthetic Care Team";
 }
 
 function buildSyntheticRoomLabel(id) {

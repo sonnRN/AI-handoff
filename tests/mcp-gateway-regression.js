@@ -32,6 +32,8 @@ async function main() {
       return jsonResponse({
         id: query.id,
         name: "FHIR Test Patient",
+        ward: "ICU",
+        department: "감염내과",
         dailyData: {
           "2026-03-17": {}
         },
@@ -47,7 +49,9 @@ async function main() {
       patients: [
         {
           id: "remote-1",
-          name: "FHIR Test Patient"
+          name: "FHIR Test Patient",
+          ward: "ICU",
+          department: "감염내과"
         }
       ],
       source: "smart-health-it-sandbox-synthetic",
@@ -70,6 +74,8 @@ async function main() {
       return jsonResponse({
         id: query.id,
         name: "Local Demo Patient",
+        ward: "N병동",
+        department: "신경과",
         source: "local-demo-fallback"
       });
     }
@@ -78,7 +84,9 @@ async function main() {
       patients: [
         {
           id: "local-1",
-          name: "Local Demo Patient"
+          name: "Local Demo Patient",
+          ward: "N병동",
+          department: "신경과"
         }
       ],
       source: "local-demo-fallback",
