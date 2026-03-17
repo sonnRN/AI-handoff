@@ -11,6 +11,7 @@ module.exports = async function healthHandler(req, res) {
   res.status(200).json({
     ok: true,
     service: "ai-handoff-vercel",
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    build: "mcp-dynamic-20260317-2"
   });
 };
