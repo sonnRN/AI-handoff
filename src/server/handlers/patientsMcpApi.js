@@ -1,5 +1,6 @@
 const { getSharedFhirMcpClient } = require("../../mcp/client/fhirMcpClient");
-const { getSharedPatientDataGateway } = require("../../mcp/runtime/patientDataGateway");
+const { createPatientDataGateway, getSharedPatientDataGateway } = require("../../mcp/runtime/patientDataGateway");
+const { createSyntheticFallbackHandler, isRemoteFhirDisabled } = require("../../mcp/runtime/syntheticFallbackHandler");
 
 function jsonResponse(statusCode, body) {
   return {
@@ -57,6 +58,19 @@ exports.handler = async function handler(event) {
 };
 
 async function getProvider() {
+  if (isRemoteFhirDisabled()) {
+    const gateway = createPatientDataGateway({
+      fallbackHandler: createSyntheticFallbackHandler()
+    });
+    return {
+      connectionMode: "ci-fallback",
+      connectionReason: "Remote FHIR disabled by environment",
+      listPatients: async (args) => gateway.listPatients(args),
+      getPatientDetail: async (args) => gateway.getPatientDetail(args.id, args),
+      prefetchPatients: async (args) => gateway.prefetchPatients(args)
+    };
+  }
+
   try {
     const client = await getSharedFhirMcpClient();
     return {

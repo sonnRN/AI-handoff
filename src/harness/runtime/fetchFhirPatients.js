@@ -2,6 +2,11 @@ const path = require("path");
 const { ROOT } = require("./loadHandoffEngineApi");
 const { buildLocalPatientSummaries, loadLocalDemoPatients } = require("./loadLocalDemoPatients");
 
+function isRemoteFhirDisabled() {
+  const value = String(process.env.AI_HANDOFF_DISABLE_REMOTE_FHIR || "").trim().toLowerCase();
+  return value === "1" || value === "true" || value === "yes";
+}
+
 function getPatientsHandler() {
   try {
     return require(path.join(ROOT, "src", "server", "handlers", "patientsMcpApi.js")).handler;
@@ -96,6 +101,19 @@ async function fetchPatientList(options = {}) {
     queryStringParameters.cursor = options.cursor;
   }
 
+  if (isRemoteFhirDisabled()) {
+    const fallbackHandler = createLocalFallbackHandler();
+    const payload = await tryFetchPatientList(fallbackHandler, queryStringParameters);
+    return {
+      handler: fallbackHandler,
+      patients: payload.patients,
+      source: payload.source || "local-demo-fallback",
+      fallback: true,
+      fallbackReason: "Remote FHIR disabled by environment",
+      pageInfo: payload.pageInfo || null
+    };
+  }
+
   const remoteHandler = getPatientsHandler();
 
   try {
@@ -135,6 +153,11 @@ async function fetchPatientList(options = {}) {
 }
 
 async function fetchPatientDetail(id) {
+  if (isRemoteFhirDisabled()) {
+    const fallbackHandler = createLocalFallbackHandler();
+    return tryFetchPatientDetail(fallbackHandler, id);
+  }
+
   const remoteHandler = getPatientsHandler();
 
   try {

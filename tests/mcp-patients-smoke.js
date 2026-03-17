@@ -16,7 +16,7 @@ async function main() {
     throw new Error("MCP metadata is missing from the patient list payload");
   }
 
-  if (!["server", "direct-fallback"].includes(String(listPayload.mcp.connectionMode || ""))) {
+  if (!["server", "direct-fallback", "ci-fallback"].includes(String(listPayload.mcp.connectionMode || ""))) {
     throw new Error("MCP connection mode is missing from the patient list payload");
   }
 

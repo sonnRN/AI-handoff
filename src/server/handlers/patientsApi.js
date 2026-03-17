@@ -6,6 +6,7 @@ const {
 const FHIR_BASE_URL = getPublicSafeFhirBaseUrl();
 const DEFAULT_PATIENT_COUNT = 8;
 const TIMELINE_DAYS = 10;
+const FHIR_FETCH_TIMEOUT_MS = Math.max(1000, Number.parseInt(String(process.env.FHIR_FETCH_TIMEOUT_MS || "8000"), 10) || 8000);
 
 const VITAL_CODES = {
   systolic: ["8480-6"],
@@ -138,9 +139,23 @@ async function fetchFHIR(path) {
   const targetUrl = /^https?:\/\//i.test(String(path || ""))
     ? String(path)
     : `${FHIR_BASE_URL}${path}`;
-  const response = await fetch(targetUrl, {
-    headers: { accept: "application/fhir+json" }
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FHIR_FETCH_TIMEOUT_MS);
+  let response;
+
+  try {
+    response = await fetch(targetUrl, {
+      headers: { accept: "application/fhir+json" },
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error && error.name === "AbortError") {
+      throw new Error(`FHIR request timed out after ${FHIR_FETCH_TIMEOUT_MS}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!response.ok) {
     throw new Error(`FHIR request failed: ${response.status} ${response.statusText}`);
