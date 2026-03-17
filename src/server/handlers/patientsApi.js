@@ -19,6 +19,43 @@ const SYNTHETIC_WARD_LAYOUT = [
   { ward: "내과병동", roomPrefix: "M", roomBase: 501, roomDigits: 3, doctorTeam: "Synthetic Medical Team" },
   { ward: "재활병동", roomPrefix: "R", roomBase: 601, roomDigits: 3, doctorTeam: "Synthetic Rehab Team" }
 ];
+const WARD_DISPLAY_ORDER = SYNTHETIC_WARD_LAYOUT.map((item) => item.ward);
+const DEPARTMENT_PRIORITY_ORDER = [
+  "감염내과",
+  "호흡기내과",
+  "순환기내과",
+  "소화기내과",
+  "내분비내과",
+  "신장비뇨의학과",
+  "신경과",
+  "외과",
+  "종양내과",
+  "재활의학과",
+  "이비인후과",
+  "일반내과"
+];
+const ICU_DIAGNOSIS_PATTERN = /shock|sepsis|respiratory failure|ventilator|ecmo|intubation|cardiac arrest|hemodynamic|critical|status epilepticus|unstable/i;
+const DEPARTMENT_WARD_MAP = new Map([
+  ["신경과", "N병동"],
+  ["외과", "S병동"],
+  ["종양내과", "S병동"],
+  ["재활의학과", "재활병동"],
+  ["감염내과", "내과병동"],
+  ["호흡기내과", "내과병동"],
+  ["순환기내과", "내과병동"],
+  ["소화기내과", "내과병동"],
+  ["내분비내과", "내과병동"],
+  ["신장비뇨의학과", "내과병동"],
+  ["이비인후과", "내과병동"],
+  ["일반내과", "내과병동"]
+]);
+const WARD_TARGET_RATIO = {
+  ICU: 0.14,
+  N병동: 0.2,
+  S병동: 0.2,
+  내과병동: 0.34,
+  재활병동: 0.12
+};
 
 const VITAL_CODES = {
   systolic: ["8480-6"],
@@ -138,12 +175,23 @@ async function buildPatientListProfiles(resources) {
     const conditions = await safeFetchResources(`/Condition?patient=${encodeURIComponent(resource.id)}&_count=12`);
     const diagnosisList = unique(sortDesc(conditions, conditionDate).map(conditionLabel)).slice(0, 4);
     const department = inferClinicalDepartment(diagnosisList);
+    const wardAssignment = buildSyntheticWardAssignment(resource.id, index + 1, {
+      department,
+      diagnosisList
+    });
 
     return {
       ...summary,
+      room: wardAssignment.room,
+      ward: wardAssignment.ward,
       department,
       diagnosis: diagnosisList[0] || `${department} synthetic case`,
-      doctor: buildSyntheticDoctorTeam(department, summary.ward)
+      doctor: buildSyntheticDoctorTeam(department, wardAssignment.ward),
+      sourceDiagnosisCount: diagnosisList.length,
+      clinicalQualityScore: buildClinicalQualityScore({
+        diagnosisList,
+        department
+      })
     };
   }).then((items) => items.filter(Boolean));
 }
@@ -161,38 +209,77 @@ async function mapInBatches(items, batchSize, mapper) {
 }
 
 function selectBalancedPatientProfiles(profiles, count) {
-  const groups = new Map();
-
-  (profiles || []).forEach((profile) => {
-    const department = String(profile?.department || "일반내과").trim() || "일반내과";
-    if (!groups.has(department)) groups.set(department, []);
-    groups.get(department).push(profile);
-  });
-
-  const orderedDepartments = Array.from(groups.keys()).sort((left, right) => {
-    const sizeDelta = groups.get(right).length - groups.get(left).length;
-    if (sizeDelta !== 0) return sizeDelta;
-    return String(left).localeCompare(String(right), "ko");
-  });
-
-  orderedDepartments.forEach((department) => {
-    groups.get(department).sort((left, right) => {
-      return buildStablePatientSortKey(left.id).localeCompare(buildStablePatientSortKey(right.id), "en");
-    });
-  });
-
+  const candidates = (profiles || []).filter(Boolean);
+  const usableProfiles = candidates.filter((profile) => Number(profile?.sourceDiagnosisCount || 0) > 0);
+  const reserveProfiles = candidates.filter((profile) => Number(profile?.sourceDiagnosisCount || 0) <= 0);
+  const wardTargets = buildWardSelectionTargets(count);
+  const departmentCaps = buildDepartmentSelectionCaps(candidates, count);
   const selected = [];
+  const selectedIds = new Set();
+  const selectedWardCounts = new Map();
+  const selectedDepartmentCounts = new Map();
+  const wardGroups = buildWardProfileGroups(usableProfiles);
+
   while (selected.length < count) {
     let addedInRound = 0;
 
-    orderedDepartments.forEach((department) => {
-      const nextPatient = groups.get(department).shift();
-      if (!nextPatient || selected.length >= count) return;
-      selected.push(nextPatient);
+    WARD_DISPLAY_ORDER.forEach((ward) => {
+      if (selected.length >= count) return;
+      const target = wardTargets.get(ward) || 0;
+      if ((selectedWardCounts.get(ward) || 0) >= target) return;
+
+      const nextPatient = takeNextSelectableProfile(
+        wardGroups.get(ward),
+        selectedDepartmentCounts,
+        departmentCaps,
+        false
+      );
+      if (!nextPatient) return;
+
+      registerSelectedProfile(nextPatient, selected, selectedIds, selectedWardCounts, selectedDepartmentCounts);
       addedInRound += 1;
     });
 
     if (!addedInRound) break;
+  }
+
+  if (selected.length < count) {
+    WARD_DISPLAY_ORDER.forEach((ward) => {
+      while (selected.length < count) {
+        const nextPatient = takeNextSelectableProfile(
+          wardGroups.get(ward),
+          selectedDepartmentCounts,
+          departmentCaps,
+          false
+        );
+        if (!nextPatient) break;
+        registerSelectedProfile(nextPatient, selected, selectedIds, selectedWardCounts, selectedDepartmentCounts);
+      }
+    });
+  }
+
+  if (selected.length < count) {
+    WARD_DISPLAY_ORDER.forEach((ward) => {
+      while (selected.length < count) {
+        const nextPatient = takeNextSelectableProfile(
+          wardGroups.get(ward),
+          selectedDepartmentCounts,
+          departmentCaps,
+          true
+        );
+        if (!nextPatient) break;
+        registerSelectedProfile(nextPatient, selected, selectedIds, selectedWardCounts, selectedDepartmentCounts);
+      }
+    });
+  }
+
+  if (selected.length < count) {
+    reserveProfiles
+      .sort(compareClinicalProfiles)
+      .forEach((profile) => {
+        if (selected.length >= count || selectedIds.has(String(profile.id))) return;
+        registerSelectedProfile(profile, selected, selectedIds, selectedWardCounts, selectedDepartmentCounts);
+      });
   }
 
   return selected.slice(0, count);
@@ -200,6 +287,134 @@ function selectBalancedPatientProfiles(profiles, count) {
 
 function buildStablePatientSortKey(id) {
   return buildSyntheticCode(id);
+}
+
+function buildClinicalQualityScore(input = {}) {
+  const diagnosisList = input.diagnosisList || [];
+  const department = String(input.department || "").trim();
+  let score = Math.min(4, diagnosisList.length) * 10;
+  if (department && department !== "일반내과") score += 8;
+  if (department === "이비인후과") score -= 4;
+  if (diagnosisList.some((item) => ICU_DIAGNOSIS_PATTERN.test(String(item || "")))) score += 12;
+  return score;
+}
+
+function compareClinicalProfiles(left, right) {
+  const scoreDelta = Number(right?.clinicalQualityScore || 0) - Number(left?.clinicalQualityScore || 0);
+  if (scoreDelta !== 0) return scoreDelta;
+
+  const departmentDelta = getDepartmentSortIndex(left?.department) - getDepartmentSortIndex(right?.department);
+  if (departmentDelta !== 0) return departmentDelta;
+
+  return buildStablePatientSortKey(left?.id).localeCompare(buildStablePatientSortKey(right?.id), "en");
+}
+
+function getDepartmentSortIndex(department) {
+  const normalized = String(department || "").trim();
+  const fixedIndex = DEPARTMENT_PRIORITY_ORDER.indexOf(normalized);
+  return fixedIndex >= 0 ? fixedIndex : DEPARTMENT_PRIORITY_ORDER.length + 1;
+}
+
+function buildWardProfileGroups(profiles) {
+  const groups = new Map();
+  WARD_DISPLAY_ORDER.forEach((ward) => groups.set(ward, []));
+
+  (profiles || []).forEach((profile) => {
+    const ward = String(profile?.ward || "내과병동").trim() || "내과병동";
+    if (!groups.has(ward)) groups.set(ward, []);
+    groups.get(ward).push(profile);
+  });
+
+  groups.forEach((items, ward) => {
+    groups.set(ward, items.slice().sort(compareClinicalProfiles));
+  });
+
+  return groups;
+}
+
+function buildWardSelectionTargets(count) {
+  const targets = new Map();
+  let allocated = 0;
+
+  WARD_DISPLAY_ORDER.forEach((ward) => {
+    const rawTarget = Math.max(1, Math.round(count * (WARD_TARGET_RATIO[ward] || 0)));
+    targets.set(ward, rawTarget);
+    allocated += rawTarget;
+  });
+
+  while (allocated > count) {
+    const ward = WARD_DISPLAY_ORDER
+      .slice()
+      .sort((left, right) => (targets.get(right) || 0) - (targets.get(left) || 0))
+      .find((item) => (targets.get(item) || 0) > 1);
+    if (!ward) break;
+    targets.set(ward, (targets.get(ward) || 0) - 1);
+    allocated -= 1;
+  }
+
+  while (allocated < count) {
+    const ward = WARD_DISPLAY_ORDER
+      .slice()
+      .sort((left, right) => (targets.get(left) || 0) - (targets.get(right) || 0))[0];
+    targets.set(ward, (targets.get(ward) || 0) + 1);
+    allocated += 1;
+  }
+
+  return targets;
+}
+
+function buildDepartmentSelectionCaps(profiles, count) {
+  const groups = new Map();
+  (profiles || []).forEach((profile) => {
+    const department = String(profile?.department || "일반내과").trim() || "일반내과";
+    if (!groups.has(department)) groups.set(department, 0);
+    groups.set(department, groups.get(department) + 1);
+  });
+
+  const distinctDepartmentCount = Math.max(1, groups.size);
+  const baseCap = Math.max(3, Math.ceil(count / Math.min(8, distinctDepartmentCount)) + 1);
+  const caps = new Map();
+
+  groups.forEach((availableCount, department) => {
+    let cap = Math.min(availableCount, baseCap);
+    if (department === "이비인후과") {
+      cap = Math.min(cap, Math.max(3, Math.ceil(count / 10)));
+    }
+    if (department === "일반내과") {
+      cap = Math.min(cap, Math.max(4, Math.ceil(count / 8)));
+    }
+    caps.set(department, cap);
+  });
+
+  return caps;
+}
+
+function takeNextSelectableProfile(group, selectedDepartmentCounts, departmentCaps, allowOverflow) {
+  if (!Array.isArray(group) || !group.length) return null;
+
+  for (let index = 0; index < group.length; index += 1) {
+    const profile = group[index];
+    const department = String(profile?.department || "일반내과").trim() || "일반내과";
+    const currentCount = selectedDepartmentCounts.get(department) || 0;
+    const cap = departmentCaps.get(department) || Number.MAX_SAFE_INTEGER;
+    if (!allowOverflow && currentCount >= cap) continue;
+    group.splice(index, 1);
+    return profile;
+  }
+
+  if (!allowOverflow) return null;
+  return group.shift() || null;
+}
+
+function registerSelectedProfile(profile, selected, selectedIds, selectedWardCounts, selectedDepartmentCounts) {
+  if (!profile || selectedIds.has(String(profile.id))) return;
+  selected.push(profile);
+  selectedIds.add(String(profile.id));
+
+  const ward = String(profile.ward || "내과병동").trim() || "내과병동";
+  const department = String(profile.department || "일반내과").trim() || "일반내과";
+  selectedWardCounts.set(ward, (selectedWardCounts.get(ward) || 0) + 1);
+  selectedDepartmentCounts.set(department, (selectedDepartmentCounts.get(department) || 0) + 1);
 }
 
 async function fetchPatientDetail(id) {
@@ -341,7 +556,6 @@ function normalizePatientSummary(resource, index) {
 }
 
 function normalizePatientDetail(data) {
-  const wardAssignment = buildSyntheticWardAssignment(data.patient.id);
   const latestEncounter = sortDesc(data.encounters, encounterDate)[0];
   const conditions = sortDesc(data.conditions, conditionDate);
   const observations = sortDesc(data.observations, observationDateTime);
@@ -354,6 +568,10 @@ function normalizePatientDetail(data) {
 
   const diagnosisList = unique(conditions.map(conditionLabel)).slice(0, 10);
   const department = inferClinicalDepartment(diagnosisList);
+  const wardAssignment = buildSyntheticWardAssignment(data.patient.id, 0, {
+    department,
+    diagnosisList
+  });
   const pastHistory = unique(conditions.map(conditionHistoryLabel)).slice(0, 10);
   const allergyList = unique(data.allergies.map(allergyLabel)).slice(0, 10);
   const procedureList = unique(procedures.map(procedureLabel)).slice(0, 10);
@@ -1557,11 +1775,14 @@ function buildSyntheticPatientLabel(id, fallbackIndex = 0) {
   return `Synthetic FHIR Patient ${buildSyntheticCode(id, fallbackIndex)}`;
 }
 
-function buildSyntheticWardAssignment(id, fallbackIndex = 0) {
+function buildSyntheticWardAssignment(id, fallbackIndex = 0, options = {}) {
   const numericCode = Number.parseInt(buildSyntheticCode(id, fallbackIndex), 10) || Math.max(1, fallbackIndex || 1);
   const absoluteIndex = Math.max(0, numericCode - 1);
-  const wardSpec = SYNTHETIC_WARD_LAYOUT[absoluteIndex % SYNTHETIC_WARD_LAYOUT.length];
-  const slot = Math.floor(absoluteIndex / SYNTHETIC_WARD_LAYOUT.length);
+  const diagnosisText = normalizeClinicalText((options.diagnosisList || []).join(" / "));
+  const department = String(options.department || "").trim();
+  const preferredWard = inferWardFromClinicalContext(department, diagnosisText, numericCode);
+  const wardSpec = resolveWardSpec(preferredWard) || SYNTHETIC_WARD_LAYOUT[absoluteIndex % SYNTHETIC_WARD_LAYOUT.length];
+  const slot = Math.floor(absoluteIndex / Math.max(1, SYNTHETIC_WARD_LAYOUT.length));
   const roomNumber = String(wardSpec.roomBase + slot).padStart(wardSpec.roomDigits, "0");
 
   return {
@@ -1569,6 +1790,23 @@ function buildSyntheticWardAssignment(id, fallbackIndex = 0) {
     room: `${wardSpec.roomPrefix}-${roomNumber}`,
     doctorTeam: wardSpec.doctorTeam
   };
+}
+
+function inferWardFromClinicalContext(department, diagnosisText, numericCode) {
+  if (ICU_DIAGNOSIS_PATTERN.test(diagnosisText || "")) return "ICU";
+
+  const mappedWard = DEPARTMENT_WARD_MAP.get(String(department || "").trim());
+  if (mappedWard === "내과병동") {
+    const shouldEscalateToIcu = ["감염내과", "호흡기내과", "순환기내과"].includes(String(department || "").trim())
+      && numericCode % 9 === 0;
+    if (shouldEscalateToIcu) return "ICU";
+  }
+
+  return mappedWard || "내과병동";
+}
+
+function resolveWardSpec(ward) {
+  return SYNTHETIC_WARD_LAYOUT.find((item) => item.ward === ward) || null;
 }
 
 function buildSyntheticDoctorTeam(department, ward) {
