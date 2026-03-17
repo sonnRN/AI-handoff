@@ -85,11 +85,11 @@ npm start
 npm run test:mcp:stdio
 ```
 
-### 7. Connect GitHub Pages to a free remote server
+### 7. Deploy on Vercel or connect GitHub Pages to Vercel
 
-1. Deploy this repo as a free web service on Render.
-2. Set the server URL in `runtime-config.js`.
-3. Push the updated `runtime-config.js` so GitHub Pages can call the remote server.
+1. Import this repo into Vercel.
+2. If the whole app is hosted on Vercel, `runtime-config.js` can stay empty.
+3. If GitHub Pages stays as the frontend, put the Vercel URL into `runtime-config.js`.
 
 ## Architecture Overview
 
@@ -139,6 +139,8 @@ See:
   - patient data handler modules
 - `src/server/httpServer.js`
   - remote HTTP server for GitHub Pages or other static frontends
+- `api/`
+  - Vercel deployment entrypoints
 - `runtime-config.js`
   - frontend remote API base configuration
 - `src/`
@@ -158,14 +160,16 @@ See:
   - gateway cache and fallback regression
 - `npm run test:server`
   - remote HTTP server smoke test
+- `npm run test:vercel`
+  - Vercel adapter smoke test
 - `npm run test:stage2`
   - stage 2 summary regression
 - `npm run test:fhir:smoke`
   - synthetic FHIR smoke test
 - `npm run test:fhir:batch`
   - synthetic FHIR batch validation
-- `npm run test:render`
-  - render smoke test
+- `npm run test:ui-render`
+  - UI render smoke test
 
 ## Release Notes for Reviewers
 
@@ -198,4 +202,4 @@ Detailed guidance:
 
 - [FEEDBACK.md](FEEDBACK.md)
 - [docs/README.md](docs/README.md)
-- [docs/render-deployment.md](docs/render-deployment.md)
+- [docs/vercel-deployment.md](docs/vercel-deployment.md)

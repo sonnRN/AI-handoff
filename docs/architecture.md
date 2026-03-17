@@ -69,7 +69,7 @@ The harness runtime loads browser-side logic inside a VM sandbox so Node-based t
 
 1. GitHub Pages serves the static frontend.
 2. The frontend reads `runtime-config.js`.
-3. If `apiBase` is configured, the browser calls the remote server.
+3. If `apiBase` is configured, the browser calls the remote Vercel server.
 4. The remote server exposes `/api/patients-mcp` and `/api/patients`.
 5. If no remote server is configured, the browser falls back to the public synthetic snapshot bundle.
 

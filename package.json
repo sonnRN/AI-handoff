@@ -11,6 +11,7 @@
     "test:mcp:stdio": "node tests/mcp-stdio-smoke.js",
     "test:mcp:gateway": "node tests/mcp-gateway-regression.js",
     "test:server": "node tests/http-server-smoke.js",
+    "test:vercel": "node tests/vercel-adapter-smoke.js",
     "mcp:server": "node src/mcp/server/fhirMcpServer.js",
     "build:public-demo-data": "node scripts/build-public-demo-data.js",
     "test:public-demo-bundle": "node tests/public-demo-bundle-smoke.js",
@@ -18,6 +19,6 @@
     "test:stage2": "node tests/stage2-summary-regression.js",
     "test:fhir:smoke": "node tests/fhir-stage12-smoke.js",
     "test:fhir:batch": "node tests/fhir-stage12-batch.js 5",
-    "test:render": "node tests/emr-render-smoke.js"
+    "test:ui-render": "node tests/emr-render-smoke.js"
   }
 }
