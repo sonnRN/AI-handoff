@@ -11,6 +11,7 @@ const {
 const DEFAULT_LIST_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_DETAIL_TTL_MS = 30 * 60 * 1000;
 const DEFAULT_CACHE_DIR = getDefaultCacheDir();
+const CACHE_SCHEMA_VERSION = "20260317-ward-department-v1";
 
 let sharedGateway = null;
 
@@ -50,7 +51,11 @@ function getDefaultCacheDir() {
 }
 
 function cacheFilePath(cacheDir, type, key) {
-  return path.join(cacheDir, type, `${encodeURIComponent(String(key || "default"))}.json`);
+  return path.join(
+    cacheDir,
+    type,
+    `${CACHE_SCHEMA_VERSION}__${encodeURIComponent(String(key || "default"))}.json`
+  );
 }
 
 function readCache(cachePath, ttlMs, now) {
@@ -104,7 +109,8 @@ function withGatewayMetadata(payload, metadata = {}) {
       fallback: Boolean(metadata.fallback),
       reason: metadata.reason || "",
       upstream: metadata.upstream || "",
-      cachedAt: metadata.cachedAt || ""
+      cachedAt: metadata.cachedAt || "",
+      cacheVersion: CACHE_SCHEMA_VERSION
     }
   };
 }
