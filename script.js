@@ -13,7 +13,6 @@ const patientDetailCache = new Map();
 let uiInitialized = false;
 const KOREA_TIMEZONE = 'Asia/Seoul';
 const PATIENT_LIST_COUNT = 20;
-const PUBLIC_DEMO_BUNDLE_URL = 'public-demo-data/patients-bundle.json';
 
 function unique(items) {
   return Array.from(new Set((items || []).filter(Boolean)));
@@ -89,7 +88,7 @@ async function loadPatientStore() {
     console.error('MCP patient load failed.', error);
     patientStore = [];
     usingExternalData = true;
-    externalApiBase = endpoints.find(endpoint => endpoint.kind !== 'public-bundle')?.url || '';
+    externalApiBase = endpoints[0]?.url || '';
     externalDataSourceLabel = '합성 FHIR MCP 연결 실패';
     patientLoadError = error.message || 'MCP patient load failed';
   }
@@ -124,10 +123,6 @@ function syncDateList(patient) {
 async function getPatientData(pid) {
   const cacheKey = String(pid);
   if (patientDetailCache.has(cacheKey)) return patientDetailCache.get(cacheKey);
-
-  if (externalApiBase.endsWith('patients-bundle.json')) {
-    return patientStore.find(pt => String(pt.id) === cacheKey) || null;
-  }
 
   const response = await fetch(`${externalApiBase}?id=${encodeURIComponent(pid)}`);
   if (!response.ok) {
@@ -1233,11 +1228,6 @@ function buildPatientDataEndpoints() {
   endpoints.push({
     kind: 'same-origin-mcp',
     url: '/api/patients-mcp'
-  });
-
-  endpoints.push({
-    kind: 'public-bundle',
-    url: PUBLIC_DEMO_BUNDLE_URL
   });
 
   return dedupeEndpoints(endpoints);
