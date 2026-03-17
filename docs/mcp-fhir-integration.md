@@ -31,7 +31,7 @@ The gateway rejects unknown payload sources, and the FHIR adapter rejects non-al
    - local cache
 5. Patient-facing identities from external synthetic FHIR data are relabeled as synthetic before display.
 6. When the app is served from GitHub Pages, the browser reads `runtime-config.js` and can call a separately deployed Vercel server.
-7. If no remote server is configured, the browser falls back to `public-demo-data/patients-bundle.json`.
+7. Browser runtime does not fall back to a committed patient bundle. If no reachable API exists, the UI reports the MCP connection failure.
 
 ## Main Files
 
@@ -39,6 +39,8 @@ The gateway rejects unknown payload sources, and the FHIR adapter rejects non-al
   - direct synthetic FHIR adapter
 - `patients-mcp.js`
   - MCP-backed app-facing proxy
+- `handoff-engine.js`
+  - canonical client-side engine contract used after patient intake
 - `patientDataGateway.js`
   - cache, explicit fallback injection, and source-safety enforcement
 - `publicDataPolicy.js`
@@ -55,7 +57,8 @@ The gateway rejects unknown payload sources, and the FHIR adapter rejects non-al
 - unknown or unsafe payload sources are rejected
 - when MCP server startup is blocked, the app uses the same gateway directly
 - external patient-like identities are converted to synthetic labels
-- proxy responses report whether data came through `server` mode or `direct-fallback` mode
+- proxy responses report whether data came through `server`, `direct-fallback`, or `ci-fallback` mode
+- proxy responses expose build/version/runtime metadata for deployment inspection
 
 ## Validation
 

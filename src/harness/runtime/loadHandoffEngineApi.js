@@ -7,7 +7,8 @@ const ROOT = path.resolve(__dirname, "..", "..", "..");
 const ENGINE_FILES = [
   "script.js",
   "stage2-overrides.js",
-  "stage2-period-overrides.js"
+  "stage2-period-overrides.js",
+  "handoff-engine.js"
 ];
 
 function loadHandoffEngineApi(options = {}) {

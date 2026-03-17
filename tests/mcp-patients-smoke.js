@@ -40,6 +40,10 @@ async function main() {
     throw new Error("MCP metadata is missing from the patient detail payload");
   }
 
+  if (!detailPayload.runtime || !detailPayload.runtime.build || !detailPayload.runtime.version) {
+    throw new Error("Runtime metadata is missing from the patient detail payload");
+  }
+
   if (!detailPayload.policy || detailPayload.policy.safeForPublicDemo !== true || detailPayload.policy.syntheticOnly !== true) {
     throw new Error("Public-safe synthetic policy metadata is missing from the patient detail payload");
   }

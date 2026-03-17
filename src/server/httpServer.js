@@ -2,6 +2,7 @@ const http = require("http");
 const { URL } = require("url");
 const { handler: patientsHandler } = require("./handlers/patientsApi");
 const { handler: patientsMcpHandler } = require("./handlers/patientsMcpApi");
+const { BUILD_INFO } = require("./buildInfo");
 
 function buildCorsHeaders() {
   return {
@@ -51,7 +52,10 @@ function createHttpServer(options = {}) {
       sendJson(res, 200, {
         ok: true,
         service: "ai-handoff-remote-mcp",
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        build: BUILD_INFO.build,
+        version: BUILD_INFO.version,
+        runtime: BUILD_INFO.runtime
       });
       return;
     }

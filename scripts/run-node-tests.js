@@ -10,6 +10,7 @@ const tests = [
   { label: "mcp patient smoke", command: ["node", "tests/mcp-patients-smoke.js"] },
   { label: "emr patient list 20", command: ["node", "tests/emr-patient-list-20-smoke.js"] },
   { label: "stage2 regression", command: ["node", "tests/stage2-summary-regression.js"] },
+  { label: "canonical engine", command: ["node", "tests/canonical-engine-smoke.js"] },
   { label: "fhir smoke", command: ["node", "tests/fhir-stage12-smoke.js"] },
   { label: "fhir batch", command: ["node", "tests/fhir-stage12-batch.js", "5"] },
   { label: "render smoke", command: ["node", "tests/emr-render-smoke.js"] }

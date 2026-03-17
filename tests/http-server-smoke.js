@@ -34,6 +34,10 @@ async function main() {
           },
           mcp: {
             transport: "local-fhir-mcp"
+          },
+          runtime: {
+            build: "stub-build",
+            version: "stub-version"
           }
         });
       }
@@ -43,6 +47,10 @@ async function main() {
         patients: [{ id: "patient-1", name: "Synthetic Stub" }],
         mcp: {
           transport: "local-fhir-mcp"
+        },
+        runtime: {
+          build: "stub-build",
+          version: "stub-version"
         }
       });
     }
@@ -53,17 +61,21 @@ async function main() {
     assert.strictEqual(health.status, 200);
     const healthJson = await health.json();
     assert.strictEqual(healthJson.ok, true);
+    assert.ok(healthJson.build);
+    assert.ok(healthJson.version);
 
     const list = await fetch(`http://127.0.0.1:${port}/api/patients-mcp?count=1`);
     assert.strictEqual(list.status, 200);
     assert.strictEqual(list.headers.get("access-control-allow-origin"), "*");
     const listJson = await list.json();
     assert.strictEqual(listJson.patients.length, 1);
+    assert.ok(listJson.runtime?.build);
 
     const detail = await fetch(`http://127.0.0.1:${port}/api/patients-mcp?id=patient-1`);
     assert.strictEqual(detail.status, 200);
     const detailJson = await detail.json();
     assert.strictEqual(detailJson.id, "patient-1");
+    assert.ok(detailJson.runtime?.build);
 
     console.log("HTTP server smoke test passed.");
   } finally {

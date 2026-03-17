@@ -3005,3 +3005,140 @@ textarea {
   font-size: 11px;
   line-height: 1.6;
 }
+
+.engine-explainability-panel {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #d7e2ec;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.engine-explainability-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.engine-explainability-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #19324d;
+}
+
+.engine-explainability-subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #5d7285;
+}
+
+.engine-explainability-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.engine-explainability-badge {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #e9f2fb;
+  color: #194c7f;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.engine-explainability-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.engine-explainability-group {
+  padding: 12px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #e3ebf3;
+}
+
+.engine-explainability-group h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #243746;
+}
+
+.engine-explainability-item {
+  padding: 10px 0;
+  border-top: 1px solid #edf2f7;
+}
+
+.engine-explainability-item:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.engine-explainability-item-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.engine-explainability-item-title {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #243746;
+  font-weight: 700;
+}
+
+.engine-explainability-item-why {
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #566b7f;
+}
+
+.engine-explainability-item-meta {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 10px;
+  color: #6f8293;
+}
+
+.engine-explainability-empty {
+  font-size: 11px;
+  color: #90a4ae;
+  line-height: 1.6;
+}
+
+.engine-explainability-tier {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.engine-explainability-tier.tier-0 {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.engine-explainability-tier.tier-1 {
+  background: #fff3e0;
+  color: #ef6c00;
+}
+
+.engine-explainability-tier.tier-2 {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.engine-explainability-tier.tier-3 {
+  background: #eceff1;
+  color: #455a64;
+}

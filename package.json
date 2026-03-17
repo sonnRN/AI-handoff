@@ -12,6 +12,7 @@
     "test:mcp:gateway": "node tests/mcp-gateway-regression.js",
     "test:server": "node tests/http-server-smoke.js",
     "test:vercel": "node tests/vercel-adapter-smoke.js",
+    "test:engine": "node tests/canonical-engine-smoke.js",
     "mcp:server": "node src/mcp/server/fhirMcpServer.js",
     "build:public-demo-data": "node scripts/build-public-demo-data.js",
     "test:public-demo-bundle": "node tests/public-demo-bundle-smoke.js",

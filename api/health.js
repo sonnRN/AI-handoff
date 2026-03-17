@@ -1,3 +1,5 @@
+const { BUILD_INFO } = require("../src/server/buildInfo");
+
 module.exports = async function healthHandler(req, res) {
   res.setHeader("access-control-allow-origin", "*");
   res.setHeader("access-control-allow-methods", "GET,OPTIONS");
@@ -12,6 +14,8 @@ module.exports = async function healthHandler(req, res) {
     ok: true,
     service: "ai-handoff-vercel",
     timestamp: new Date().toISOString(),
-    build: "mcp-dynamic-20260317-2"
+    build: BUILD_INFO.build,
+    version: BUILD_INFO.version,
+    runtime: BUILD_INFO.runtime
   });
 };

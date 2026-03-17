@@ -16,6 +16,7 @@ The repository has two main runtime layers:
 
 - browser runtime
   - `script.js`
+  - `handoff-engine.js`
   - `stage2-overrides.js`
   - `stage2-period-overrides.js`
 - remote server runtime
@@ -71,11 +72,13 @@ The harness runtime loads browser-side logic inside a VM sandbox so Node-based t
 2. The frontend reads `runtime-config.js`.
 3. If `apiBase` is configured, the browser calls the remote Vercel server.
 4. The remote server exposes `/api/patients-mcp` and `/api/patients`.
-5. If no remote server is configured, the browser falls back to the public synthetic snapshot bundle.
+5. If no remote server is configured, the browser can still use same-origin `/api/patients-mcp` on Vercel.
+6. If neither route exists, the UI keeps the MCP connection failure visible instead of loading a committed patient bundle.
 
 ## Structural Boundary
 
 - Browser logic remains in root app files for the live UI.
+- `handoff-engine.js` is the canonical engine contract that UI and harness should share.
 - Reusable validation and automation helpers live under `src/`.
 - Live app runtime should depend on `patients-mcp` rather than local patient files.
 - Tests should depend on `src/harness/` instead of hand-rolled VM setup.

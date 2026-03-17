@@ -1,6 +1,7 @@
 const { getSharedFhirMcpClient } = require("../../mcp/client/fhirMcpClient");
 const { createPatientDataGateway, getSharedPatientDataGateway } = require("../../mcp/runtime/patientDataGateway");
 const { createSyntheticFallbackHandler, isRemoteFhirDisabled } = require("../../mcp/runtime/syntheticFallbackHandler");
+const { BUILD_INFO } = require("../buildInfo");
 
 function jsonResponse(statusCode, body) {
   return {
@@ -95,10 +96,21 @@ async function getProvider() {
 function withConnectionMode(payload, mode, reason) {
   return {
     ...payload,
+    runtime: {
+      build: BUILD_INFO.build,
+      version: BUILD_INFO.version,
+      runtime: BUILD_INFO.runtime,
+      cacheTtlMs: BUILD_INFO.cacheTtlMs,
+      fetchTimeoutMs: BUILD_INFO.fetchTimeoutMs
+    },
     mcp: {
       ...(payload.mcp || {}),
+      build: BUILD_INFO.build,
+      version: BUILD_INFO.version,
       connectionMode: mode,
-      connectionReason: reason || ""
+      connectionReason: reason || "",
+      cacheTtlMs: BUILD_INFO.cacheTtlMs,
+      fetchTimeoutMs: BUILD_INFO.fetchTimeoutMs
     }
   };
 }

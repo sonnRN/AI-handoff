@@ -19,13 +19,14 @@ This project shows how MCP-delivered synthetic patient timeline data can be turn
 - prioritized nursing handoff items
 - structured output that can later support SBAR-style rendering
 
-The current demo runtime is built on an MCP-backed public synthetic FHIR adapter. The published app is intended to use a live remote API path rather than a static patient snapshot.
+The current demo runtime is built on an MCP-backed public synthetic FHIR adapter. The published app is intended to use a live remote API path rather than a committed static patient snapshot.
 
 ## Public-Release Data Policy
 
 - Runtime patient intake is MCP-first and public synthetic FHIR only.
 - External FHIR integration targets a public synthetic sandbox.
-- GitHub Pages uses a committed public synthetic snapshot fallback when server routes are unavailable.
+- Browser runtime does not use a committed patient bundle fallback.
+- Harness-only synthetic fixtures stay inside tests and never drive the browser UI.
 - Any patient-like identity returned by external synthetic FHIR data is converted to a clearly synthetic label before display.
 - No private hospital endpoints, secrets, or production credentials belong in this repository.
 - External FHIR access is restricted to an allowlisted public synthetic base URL.
@@ -131,6 +132,8 @@ See:
 
 - `script.js`
   - browser-side handoff engine and MCP-backed app logic
+- `handoff-engine.js`
+  - canonical handoff engine contract shared by UI and harness
 - `stage2-overrides.js`
   - stage 2 rendering and summary behavior overrides
 - `stage2-period-overrides.js`
@@ -158,6 +161,8 @@ See:
   - MCP patient smoke test
 - `npm run test:mcp:gateway`
   - gateway cache and fallback regression
+- `node tests/canonical-engine-smoke.js`
+  - canonical engine contract, tiering, and verification smoke test
 - `npm run test:server`
   - remote HTTP server smoke test
 - `npm run test:vercel`

@@ -58,10 +58,12 @@ The browser tries these sources in order:
 
 1. configured remote server in `runtime-config.js`
 2. same-origin `/api/patients-mcp`
-3. `public-demo-data/patients-bundle.json`
+
+If neither route is reachable, the browser keeps the connection error visible instead of loading a committed patient bundle.
 
 ## Health check
 
 - `/api/health`
 - `/api/patients`
 - `/api/patients-mcp`
+- `/api/health` should expose `build`, `version`, and `runtime`
