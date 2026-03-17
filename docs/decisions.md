@@ -41,3 +41,7 @@ Stage 3 and later handoff analysis now applies department-based profiles instead
 ### Layer profile-specific change augmentation on top of legacy detection
 
 The current runtime keeps the existing date-based legacy detector as the base layer, then augments it with department-specific change signals before prioritization. This preserves compatibility with the older demo while adding clinically meaningful follow-up events for ICU support, surgical drain and wound checks, neurology aspiration risk, oncology blood-count and chemotherapy changes, and medical ward electrolyte or infection follow-up.
+
+### Expose stage 5 and stage 6 as structured output, not only SBAR text
+
+The canonical engine now emits a dedicated `handoffOutput` object in addition to SBAR hints. It groups top-priority items, next-shift actions, carryover work, review-needed items, withheld items, and a lightweight claim matrix so reviewers can inspect the output and verification status without relying on free-form text alone.

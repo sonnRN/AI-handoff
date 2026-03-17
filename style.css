@@ -3189,3 +3189,128 @@ textarea {
   background: #eceff1;
   color: #455a64;
 }
+
+.engine-output-panel {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #e1e8ef;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.engine-output-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.engine-output-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #19324d;
+}
+
+.engine-output-subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #5d7285;
+}
+
+.engine-output-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.engine-output-grid.secondary {
+  margin-top: 12px;
+}
+
+.engine-output-group {
+  padding: 12px;
+  border-radius: 12px;
+  background: #f8fbff;
+  border: 1px solid #e3ebf3;
+}
+
+.engine-output-group.wide {
+  grid-column: span 2;
+}
+
+.engine-output-group h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #243746;
+}
+
+.engine-output-item {
+  padding: 10px 0;
+  border-top: 1px solid #edf2f7;
+}
+
+.engine-output-item:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.engine-output-item-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.engine-output-item-title {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #243746;
+  font-weight: 700;
+}
+
+.engine-output-item-body {
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #566b7f;
+}
+
+.engine-output-item-meta {
+  margin-top: 6px;
+  font-size: 10px;
+  color: #6f8293;
+}
+
+.engine-output-empty {
+  font-size: 11px;
+  line-height: 1.6;
+  color: #90a4ae;
+}
+
+.engine-claim-row {
+  padding: 10px 0;
+  border-top: 1px solid #edf2f7;
+}
+
+.engine-claim-row:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.engine-claim-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #243746;
+  font-weight: 700;
+}
+
+.engine-claim-meta {
+  margin-top: 5px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 10px;
+  color: #6f8293;
+}

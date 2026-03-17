@@ -819,6 +819,56 @@
     };
   }
 
+  function buildVerificationClaims(prioritizedItems) {
+    return (prioritizedItems || []).slice(0, 12).map((item) => ({
+      id: item.id || item.summary,
+      claim: item.summary,
+      tier: item.priorityTierLabel,
+      status: item.verification?.status || "needs-review",
+      evidenceCount: item.verification?.evidenceCount || 0,
+      subtype: item.changeSubtype || item.type || "",
+      evidence: safeEvidenceList(item).slice(0, 2)
+    }));
+  }
+
+  function buildSbarHintsMap(sbarPayload) {
+    return {
+      situation: (sbarPayload?.situation || []).map((item) => item.summary).slice(0, 3),
+      background: (sbarPayload?.background || []).map((item) => item.summary).slice(0, 3),
+      assessment: (sbarPayload?.assessment || []).map((item) => item.summary).slice(0, 3),
+      recommendation: (sbarPayload?.recommendation || []).map((item) => item.summary).slice(0, 3)
+    };
+  }
+
+  function buildStructuredHandoffOutput(longitudinalSummary, prioritizedItems, sbarPayload, verificationResult, departmentProfile) {
+    const items = prioritizedItems || [];
+    const verifiedItems = items.filter((item) => item.verification?.status === "verified");
+    const reviewItems = items.filter((item) => item.verification?.status === "needs-review");
+    const actionItems = items.filter((item) => item.flags?.immediateRisk || item.flags?.timeSensitive).slice(0, 5);
+    const carryoverItems = items.filter((item) => item.flags?.carryover).slice(0, 5);
+    const watchItems = items.filter((item) => item.priorityTier === 2).slice(0, 5);
+    const backgroundItems = items.filter((item) => item.priorityTier === 3).slice(0, 5);
+
+    return {
+      outputContract: "handoff-output-v1",
+      departmentProfile,
+      summaryLines: buildConciseLines(longitudinalSummary).slice(0, 5),
+      topPriorityItems: items.filter((item) => item.priorityTier <= 1).slice(0, 5),
+      actionItems,
+      carryoverItems,
+      watchItems,
+      backgroundItems,
+      verification: {
+        status: verificationResult?.status || "verified",
+        verifiedItems: verifiedItems.slice(0, 6),
+        reviewItems: reviewItems.slice(0, 6),
+        withheldItems: verificationResult?.abstainedItems || [],
+        claims: buildVerificationClaims(items)
+      },
+      sbarHints: buildSbarHintsMap(sbarPayload)
+    };
+  }
+
   function groupLowerPrioritySummary(items) {
     return {
       tier2: items.filter((item) => item.priorityTier === 2).map((item) => item.summary),
@@ -975,6 +1025,13 @@
     const carryoverItems = prioritizedHandoffItems.filter((item) => item.flags?.carryover);
     const groupedLowerPrioritySummary = groupLowerPrioritySummary(prioritizedHandoffItems);
     const sbarPayload = buildCanonicalSbarPayload(patient, legacyAnalysis, prioritizedHandoffItems, current, previous, departmentProfile);
+    const handoffOutput = buildStructuredHandoffOutput(
+      longitudinalSummary,
+      prioritizedHandoffItems,
+      sbarPayload,
+      verificationResult,
+      departmentProfile
+    );
 
     const result = {
       ...(legacyAnalysis || {}),
@@ -992,6 +1049,7 @@
       explanationIndex: buildExplanationIndex(longitudinalSummary, prioritizedHandoffItems),
       verificationResult,
       sbarPayload,
+      handoffOutput,
       runtimePolicy: {
         sourceAgnostic: true,
         verificationRequiredForTopTier: true,
@@ -1032,6 +1090,89 @@
         </div>
       </article>
     `).join("");
+  }
+
+  function renderStructuredList(items, emptyLabel) {
+    if (!items || !items.length) {
+      return `<div class="engine-output-empty">${escapeHtml(emptyLabel || "항목 없음")}</div>`;
+    }
+
+    return items.map((item) => `
+      <article class="engine-output-item">
+        <div class="engine-output-item-top">
+          <div class="engine-output-item-title">${escapeHtml(item.summary || item.claim || "-")}</div>
+          ${item.priorityTierLabel ? `<span class="engine-explainability-tier tier-${item.priorityTier}">${escapeHtml(item.priorityTierLabel)}</span>` : ""}
+        </div>
+        ${item.actionRelevance ? `<div class="engine-output-item-body">${escapeHtml(item.actionRelevance)}</div>` : ""}
+        ${item.reason ? `<div class="engine-output-item-body">${escapeHtml(item.reason)}</div>` : ""}
+        ${(item.evidenceCount != null) ? `<div class="engine-output-item-meta">근거 ${escapeHtml(String(item.evidenceCount || 0))}개</div>` : ""}
+      </article>
+    `).join("");
+  }
+
+  function renderClaimMatrix(claims) {
+    if (!claims || !claims.length) {
+      return '<div class="engine-output-empty">검증 claim 없음</div>';
+    }
+
+    return claims.map((claim) => `
+      <div class="engine-claim-row">
+        <div class="engine-claim-text">${escapeHtml(claim.claim || "-")}</div>
+        <div class="engine-claim-meta">
+          <span>${escapeHtml(claim.tier || "-")}</span>
+          <span>${escapeHtml(claim.status || "-")}</span>
+          <span>근거 ${escapeHtml(String(claim.evidenceCount || 0))}개</span>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  function renderStructuredHandoffOutputPanel(analysis) {
+    const output = analysis?.handoffOutput;
+    if (!output) return "";
+
+    return `
+      <section class="engine-output-panel">
+        <div class="engine-output-header">
+          <div>
+            <div class="engine-output-title">인계 출력 구조</div>
+            <div class="engine-output-subtitle">핵심 배경, action, carryover, 검토 필요, 보류 항목을 구조화해 보여줍니다.</div>
+          </div>
+          <div class="engine-explainability-badges">
+            <span class="engine-explainability-badge">${escapeHtml(output.departmentProfile?.label || "공통 프로파일")}</span>
+            <span class="engine-explainability-badge">검증 ${escapeHtml(output.verification?.status || "verified")}</span>
+          </div>
+        </div>
+        <div class="engine-output-grid">
+          <section class="engine-output-group">
+            <h4>즉시/우선 인계</h4>
+            ${renderStructuredList(output.topPriorityItems, "우선 인계 항목 없음")}
+          </section>
+          <section class="engine-output-group">
+            <h4>다음 근무조 action</h4>
+            ${renderStructuredList(output.actionItems, "즉시 action 항목 없음")}
+          </section>
+          <section class="engine-output-group">
+            <h4>지속 인계 책임</h4>
+            ${renderStructuredList(output.carryoverItems, "지속 인계 책임 없음")}
+          </section>
+          <section class="engine-output-group">
+            <h4>검토 필요</h4>
+            ${renderStructuredList(output.verification?.reviewItems, "검토 필요 항목 없음")}
+          </section>
+        </div>
+        <div class="engine-output-grid secondary">
+          <section class="engine-output-group">
+            <h4>출력 보류</h4>
+            ${renderStructuredList(output.verification?.withheldItems, "보류 항목 없음")}
+          </section>
+          <section class="engine-output-group wide">
+            <h4>검증 claim 매트릭스</h4>
+            ${renderClaimMatrix(output.verification?.claims)}
+          </section>
+        </div>
+      </section>
+    `;
   }
 
   function renderExplainabilityPanel(analysis) {
@@ -1086,7 +1227,7 @@
       ? legacy.generateNarrativeSBAR(patient, startData, endData, dates)
       : "";
 
-    return `${baseHtml}${renderExplainabilityPanel(analysis)}`;
+    return `${baseHtml}${renderExplainabilityPanel(analysis)}${renderStructuredHandoffOutputPanel(analysis)}`;
   }
 
   function getHandoffEngineMetadata() {

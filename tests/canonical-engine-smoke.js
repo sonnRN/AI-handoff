@@ -121,10 +121,14 @@ function main() {
   assert.ok(analysis.verificationResult);
   assert.ok(Array.isArray(analysis.actionNeededItems));
   assert.ok(analysis.groupedLowerPrioritySummary);
+  assert.ok(analysis.handoffOutput);
+  assert.strictEqual(analysis.handoffOutput.outputContract, "handoff-output-v1");
   assert.ok(analysis.departmentProfileUsed);
   assert.strictEqual(analysis.departmentProfileUsed.id, "neurology_ward");
   assert.ok(analysis.changeEvents.some((item) => item.changeSubtype));
   assert.ok(analysis.changeEvents.some((item) => item.profileSignal === "neurology_risk"));
+  assert.ok(Array.isArray(analysis.handoffOutput.topPriorityItems));
+  assert.ok(Array.isArray(analysis.handoffOutput.verification.claims));
 
   const topItem = analysis.prioritizedHandoffItems[0];
   assert.ok(topItem.priorityTierLabel);
@@ -176,6 +180,7 @@ function main() {
     dates
   );
   assert(/engine-explainability-panel/.test(html));
+  assert(/engine-output-panel/.test(html));
   assert(/신경계 병동/.test(html));
   assert(/즉시 보고|다음 근무조/.test(html));
 
