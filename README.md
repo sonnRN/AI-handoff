@@ -20,11 +20,13 @@ This project shows how MCP-delivered synthetic patient timeline data can be turn
 - structured output that can later support SBAR-style rendering
 
 The current demo runtime is built on an MCP-backed public synthetic FHIR adapter. The published app is intended to use a live remote API path rather than a committed static patient snapshot.
+The same MCP path can also switch to a local `Synthea` folder so the UI and handoff engine stay unchanged while the synthetic inpatient data source grows.
 
 ## Public-Release Data Policy
 
 - Runtime patient intake is MCP-first and public synthetic FHIR only.
 - External FHIR integration targets a public synthetic sandbox.
+- A local `Synthea` folder can also be mounted behind MCP as a synthetic-only source.
 - Browser runtime does not use a committed patient bundle fallback.
 - Harness-only synthetic fixtures stay inside tests and never drive the browser UI.
 - Any patient-like identity returned by external synthetic FHIR data is converted to a clearly synthetic label before display.
@@ -71,6 +73,14 @@ Main entrypoints:
 ### 4. Start the local MCP server directly
 
 ```bash
+npm run mcp:server
+```
+
+### 4-1. Start the MCP server on local Synthea files
+
+```bash
+set AI_HANDOFF_PATIENT_SOURCE=synthea-local
+set AI_HANDOFF_SYNTHEA_DIR=data\\synthea\\fhir
 npm run mcp:server
 ```
 
@@ -127,6 +137,7 @@ See:
 - [docs/architecture.md](docs/architecture.md)
 - [docs/product-spec.md](docs/product-spec.md)
 - [docs/mcp-fhir-integration.md](docs/mcp-fhir-integration.md)
+- [docs/synthea-mcp-data-source.md](docs/synthea-mcp-data-source.md)
 
 ## Repo Map
 
@@ -159,6 +170,8 @@ See:
   - full test suite
 - `npm run test:mcp`
   - MCP patient smoke test
+- `npm run test:synthea`
+  - local Synthea source smoke test
 - `npm run test:mcp:gateway`
   - gateway cache and fallback regression
 - `node tests/canonical-engine-smoke.js`

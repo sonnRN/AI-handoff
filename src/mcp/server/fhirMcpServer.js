@@ -51,6 +51,7 @@ function listTools() {
           properties: {
             count: { type: "number" },
             cursor: { type: "string" },
+            source: { type: "string" },
             forceRefresh: { type: "boolean" }
           }
         }
@@ -63,6 +64,7 @@ function listTools() {
           required: ["id"],
           properties: {
             id: { type: "string" },
+            source: { type: "string" },
             forceRefresh: { type: "boolean" }
           }
         }
@@ -76,6 +78,7 @@ function listTools() {
             count: { type: "number" },
             pages: { type: "number" },
             cursor: { type: "string" },
+            source: { type: "string" },
             forceRefresh: { type: "boolean" }
           }
         }

@@ -7,6 +7,7 @@
     "start": "node src/server/httpServer.js",
     "test": "node scripts/run-node-tests.js",
     "test:mcp": "node tests/mcp-patients-smoke.js",
+    "test:synthea": "node tests/synthea-source-smoke.js",
     "test:mcp:wiring": "node tests/mcp-runtime-wiring-smoke.js",
     "test:mcp:stdio": "node tests/mcp-stdio-smoke.js",
     "test:mcp:gateway": "node tests/mcp-gateway-regression.js",

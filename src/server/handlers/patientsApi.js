@@ -2712,3 +2712,15 @@ function jsonResponse(statusCode, body) {
     body: JSON.stringify(body)
   };
 }
+
+module.exports = {
+  handler: exports.handler,
+  fetchPatientList,
+  fetchPatientListPage,
+  normalizePatientCount,
+  normalizePatientSummary,
+  normalizePatientDetail,
+  buildSyntheticWardAssignment,
+  buildSyntheticDoctorTeam,
+  inferClinicalDepartment
+};

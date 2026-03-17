@@ -25,10 +25,12 @@ exports.handler = async function handler(event) {
     const query = event.queryStringParameters || {};
     const forceRefresh = String(query.refresh || "") === "1";
     const provider = await getProvider();
+    const source = typeof query.source === "string" ? query.source : "";
 
     if (query.id) {
       const detail = withConnectionMode(await provider.getPatientDetail({
         id: String(query.id),
+        source,
         forceRefresh
       }), provider.connectionMode, provider.connectionReason);
       return jsonResponse(200, detail);
@@ -39,6 +41,7 @@ exports.handler = async function handler(event) {
         count: parseCount(query.count, 8),
         pages: Math.max(1, Number.parseInt(String(query.pages || 1), 10) || 1),
         cursor: typeof query.cursor === "string" ? query.cursor : "",
+        source,
         forceRefresh
       }), provider.connectionMode, provider.connectionReason);
       return jsonResponse(200, prefetched);
@@ -47,6 +50,7 @@ exports.handler = async function handler(event) {
     const page = withConnectionMode(await provider.listPatients({
       count: parseCount(query.count, 8),
       cursor: typeof query.cursor === "string" ? query.cursor : "",
+      source,
       forceRefresh
     }), provider.connectionMode, provider.connectionReason);
     return jsonResponse(200, page);
@@ -111,6 +115,7 @@ function withConnectionMode(payload, mode, reason) {
       version: BUILD_INFO.version,
       connectionMode: mode,
       connectionReason: reason || "",
+      sourceAdapter: payload?.policy?.sourceAdapter || "",
       cacheTtlMs: BUILD_INFO.cacheTtlMs,
       fetchTimeoutMs: BUILD_INFO.fetchTimeoutMs
     }

@@ -1,0 +1,171 @@
+{
+  "resourceType": "Bundle",
+  "type": "collection",
+  "entry": [
+    {
+      "resource": {
+        "resourceType": "Patient",
+        "id": "synthea-p002",
+        "gender": "female",
+        "birthDate": "1968-09-03",
+        "name": [
+          {
+            "family": "Synthetic",
+            "given": ["OncologyTwo"]
+          }
+        ]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "enc-p002",
+        "subject": { "reference": "Patient/synthea-p002" },
+        "period": {
+          "start": "2026-03-11T08:00:00Z",
+          "end": "2026-03-15T09:00:00Z"
+        },
+        "type": [
+          {
+            "text": "Oncology admission"
+          }
+        ],
+        "reasonCode": [
+          {
+            "text": "Scheduled chemotherapy"
+          }
+        ]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Condition",
+        "id": "cond-p002",
+        "subject": { "reference": "Patient/synthea-p002" },
+        "recordedDate": "2026-03-11T08:30:00Z",
+        "code": { "text": "Pancreatic cancer" }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-p002-sbp",
+        "subject": { "reference": "Patient/synthea-p002" },
+        "effectiveDateTime": "2026-03-15T08:10:00Z",
+        "code": {
+          "coding": [{ "system": "http://loinc.org", "code": "8480-6" }],
+          "text": "Systolic blood pressure"
+        },
+        "valueQuantity": { "value": 112, "unit": "mmHg" }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-p002-dbp",
+        "subject": { "reference": "Patient/synthea-p002" },
+        "effectiveDateTime": "2026-03-15T08:10:00Z",
+        "code": {
+          "coding": [{ "system": "http://loinc.org", "code": "8462-4" }],
+          "text": "Diastolic blood pressure"
+        },
+        "valueQuantity": { "value": 72, "unit": "mmHg" }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-p002-hr",
+        "subject": { "reference": "Patient/synthea-p002" },
+        "effectiveDateTime": "2026-03-15T08:10:00Z",
+        "code": {
+          "coding": [{ "system": "http://loinc.org", "code": "8867-4" }],
+          "text": "Heart rate"
+        },
+        "valueQuantity": { "value": 102, "unit": "/min" }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-p002-temp",
+        "subject": { "reference": "Patient/synthea-p002" },
+        "effectiveDateTime": "2026-03-15T08:10:00Z",
+        "code": {
+          "coding": [{ "system": "http://loinc.org", "code": "8310-5" }],
+          "text": "Body temperature"
+        },
+        "valueQuantity": { "value": 36.8, "unit": "Cel" }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-p002-spo2",
+        "subject": { "reference": "Patient/synthea-p002" },
+        "effectiveDateTime": "2026-03-15T08:10:00Z",
+        "code": {
+          "coding": [{ "system": "http://loinc.org", "code": "59408-5" }],
+          "text": "Oxygen saturation in Arterial blood by Pulse oximetry"
+        },
+        "valueQuantity": { "value": 97, "unit": "%" }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-p002-rr",
+        "subject": { "reference": "Patient/synthea-p002" },
+        "effectiveDateTime": "2026-03-15T08:10:00Z",
+        "code": {
+          "coding": [{ "system": "http://loinc.org", "code": "9279-1" }],
+          "text": "Respiratory rate"
+        },
+        "valueQuantity": { "value": 22, "unit": "/min" }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-p002-hb",
+        "subject": { "reference": "Patient/synthea-p002" },
+        "effectiveDateTime": "2026-03-15T07:50:00Z",
+        "code": {
+          "coding": [{ "system": "http://loinc.org", "code": "718-7" }],
+          "text": "Hemoglobin"
+        },
+        "valueQuantity": { "value": 9.1, "unit": "g/dL" }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "med-p002",
+        "subject": { "reference": "Patient/synthea-p002" },
+        "status": "active",
+        "medicationCodeableConcept": {
+          "text": "Gemcitabine infusion"
+        }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "CarePlan",
+        "id": "cp-p002",
+        "subject": { "reference": "Patient/synthea-p002" },
+        "status": "active",
+        "title": "Chemotherapy care and nutrition support"
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Procedure",
+        "id": "proc-p002",
+        "subject": { "reference": "Patient/synthea-p002" },
+        "status": "completed",
+        "performedDateTime": "2026-03-12T10:00:00Z",
+        "code": { "text": "Implanted port access" }
+      }
+    }
+  ]
+}

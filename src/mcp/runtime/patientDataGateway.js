@@ -2,7 +2,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { ROOT } = require("../../harness/runtime/loadHandoffEngineApi");
-const { handler: upstreamPatientsHandler } = require("../../server/handlers/patientsApi");
+const { resolvePatientSourceHandler, DEFAULT_SOURCE } = require("../../server/handlers/patientSourceResolver");
 const {
   assertAllowedPublicPayload,
   isAllowedPublicPayloadSource
@@ -16,7 +16,7 @@ const CACHE_SCHEMA_VERSION = "20260317-ward-department-v1";
 let sharedGateway = null;
 
 function getUpstreamPatientsHandler() {
-  return upstreamPatientsHandler;
+  return resolvePatientSourceHandler(DEFAULT_SOURCE).handler;
 }
 
 function parseHandlerPayload(response) {
@@ -116,15 +116,26 @@ function withGatewayMetadata(payload, metadata = {}) {
 }
 
 function createPatientDataGateway(options = {}) {
-  const remoteHandler = options.remoteHandler || getUpstreamPatientsHandler();
+  const remoteHandlerResolver = typeof options.remoteHandlerResolver === "function"
+    ? options.remoteHandlerResolver
+    : (requestedSource) => {
+        if (options.remoteHandler) {
+          return {
+            source: String(requestedSource || DEFAULT_SOURCE),
+            handler: options.remoteHandler
+          };
+        }
+        return resolvePatientSourceHandler(requestedSource);
+      };
   const fallbackHandler = typeof options.fallbackHandler === "function" ? options.fallbackHandler : null;
   const cacheDir = options.cacheDir || DEFAULT_CACHE_DIR;
   const listTtlMs = options.listTtlMs || DEFAULT_LIST_TTL_MS;
   const detailTtlMs = options.detailTtlMs || DEFAULT_DETAIL_TTL_MS;
   const now = typeof options.now === "function" ? options.now : () => Date.now();
 
-  async function warmDetailCache(patientSummaries = []) {
+  async function warmDetailCache(patientSummaries = [], source = DEFAULT_SOURCE) {
     const warmedAt = new Date(now()).toISOString();
+    const { handler: remoteHandler } = remoteHandlerResolver(source);
     const uniqueIds = Array.from(new Set(
       (patientSummaries || [])
         .map((patient) => String(patient?.id || "").trim())
@@ -132,17 +143,17 @@ function createPatientDataGateway(options = {}) {
     ));
 
     for (const id of uniqueIds) {
-      const detailCachePath = cacheFilePath(cacheDir, "details", id);
+      const detailCachePath = cacheFilePath(cacheDir, "details", `${source}__${id}`);
       const cachedDetail = getSafeCachedPayload(readCache(detailCachePath, detailTtlMs, now));
       if (cachedDetail && cachedDetail.fresh) continue;
 
       try {
-        const response = await remoteHandler({ queryStringParameters: { id } });
+        const response = await remoteHandler({ queryStringParameters: { id, source } });
         const payload = assertAllowedPublicPayload(parseHandlerPayload(response));
         const enriched = withGatewayMetadata(payload, {
           cache: "refreshed",
           fallback: false,
-          upstream: "fhir-api",
+          upstream: payload.source || "fhir-api",
           cachedAt: warmedAt
         });
         writeCache(detailCachePath, enriched);
@@ -155,10 +166,12 @@ function createPatientDataGateway(options = {}) {
     const count = normalizeCount(params.count, 8);
     const cursor = typeof params.cursor === "string" ? params.cursor : "";
     const forceRefresh = params.forceRefresh === true;
-    const queryStringParameters = { count: String(count) };
+    const requestedSource = String(params.source || DEFAULT_SOURCE);
+    const { source, handler: remoteHandler } = remoteHandlerResolver(requestedSource);
+    const queryStringParameters = { count: String(count), source };
     if (cursor) queryStringParameters.cursor = cursor;
 
-    const cachePath = cacheFilePath(cacheDir, "lists", `${count}__${cursor || "start"}`);
+    const cachePath = cacheFilePath(cacheDir, "lists", `${source}__${count}__${cursor || "start"}`);
     const cached = getSafeCachedPayload(readCache(cachePath, listTtlMs, now));
 
     if (!forceRefresh && cached && cached.fresh) {
@@ -176,11 +189,11 @@ function createPatientDataGateway(options = {}) {
       const enriched = withGatewayMetadata(payload, {
         cache: "refreshed",
         fallback: false,
-        upstream: "fhir-api",
+        upstream: payload.source || source,
         cachedAt: new Date(now()).toISOString()
       });
       writeCache(cachePath, enriched);
-      await warmDetailCache(payload.patients || []);
+      await warmDetailCache(payload.patients || [], source);
       return enriched;
     } catch (remoteError) {
       if (cached) {
@@ -213,8 +226,10 @@ function createPatientDataGateway(options = {}) {
     }
 
     const forceRefresh = params.forceRefresh === true;
-    const queryStringParameters = { id: String(id) };
-    const cachePath = cacheFilePath(cacheDir, "details", id);
+    const requestedSource = String(params.source || DEFAULT_SOURCE);
+    const { source, handler: remoteHandler } = remoteHandlerResolver(requestedSource);
+    const queryStringParameters = { id: String(id), source };
+    const cachePath = cacheFilePath(cacheDir, "details", `${source}__${id}`);
     const cached = getSafeCachedPayload(readCache(cachePath, detailTtlMs, now));
 
     if (!forceRefresh && cached && cached.fresh) {
@@ -232,7 +247,7 @@ function createPatientDataGateway(options = {}) {
       const enriched = withGatewayMetadata(payload, {
         cache: "refreshed",
         fallback: false,
-        upstream: "fhir-api",
+        upstream: payload.source || source,
         cachedAt: new Date(now()).toISOString()
       });
       writeCache(cachePath, enriched);
@@ -273,6 +288,7 @@ function createPatientDataGateway(options = {}) {
       const page = await listPatients({
         count,
         cursor,
+        source: params.source,
         forceRefresh: params.forceRefresh === true
       });
       aggregated.push(...(page.patients || []));

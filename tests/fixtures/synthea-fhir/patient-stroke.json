@@ -1,0 +1,161 @@
+{
+  "resourceType": "Bundle",
+  "type": "collection",
+  "entry": [
+    {
+      "resource": {
+        "resourceType": "Patient",
+        "id": "synthea-p001",
+        "gender": "male",
+        "birthDate": "1959-04-12",
+        "name": [
+          {
+            "family": "Synthetic",
+            "given": ["StrokeOne"]
+          }
+        ]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "enc-p001",
+        "subject": { "reference": "Patient/synthea-p001" },
+        "period": {
+          "start": "2026-03-10T09:00:00Z",
+          "end": "2026-03-14T10:00:00Z"
+        },
+        "type": [
+          {
+            "text": "Stroke admission"
+          }
+        ],
+        "reasonCode": [
+          {
+            "text": "Left-sided weakness"
+          }
+        ]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Condition",
+        "id": "cond-p001",
+        "subject": { "reference": "Patient/synthea-p001" },
+        "recordedDate": "2026-03-10T09:30:00Z",
+        "code": { "text": "Stroke" }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-p001-sbp",
+        "subject": { "reference": "Patient/synthea-p001" },
+        "effectiveDateTime": "2026-03-14T08:00:00Z",
+        "code": {
+          "coding": [{ "system": "http://loinc.org", "code": "8480-6" }],
+          "text": "Systolic blood pressure"
+        },
+        "valueQuantity": { "value": 138, "unit": "mmHg" }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-p001-dbp",
+        "subject": { "reference": "Patient/synthea-p001" },
+        "effectiveDateTime": "2026-03-14T08:00:00Z",
+        "code": {
+          "coding": [{ "system": "http://loinc.org", "code": "8462-4" }],
+          "text": "Diastolic blood pressure"
+        },
+        "valueQuantity": { "value": 84, "unit": "mmHg" }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-p001-hr",
+        "subject": { "reference": "Patient/synthea-p001" },
+        "effectiveDateTime": "2026-03-14T08:00:00Z",
+        "code": {
+          "coding": [{ "system": "http://loinc.org", "code": "8867-4" }],
+          "text": "Heart rate"
+        },
+        "valueQuantity": { "value": 96, "unit": "/min" }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-p001-temp",
+        "subject": { "reference": "Patient/synthea-p001" },
+        "effectiveDateTime": "2026-03-14T08:00:00Z",
+        "code": {
+          "coding": [{ "system": "http://loinc.org", "code": "8310-5" }],
+          "text": "Body temperature"
+        },
+        "valueQuantity": { "value": 37.1, "unit": "Cel" }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-p001-spo2",
+        "subject": { "reference": "Patient/synthea-p001" },
+        "effectiveDateTime": "2026-03-14T08:00:00Z",
+        "code": {
+          "coding": [{ "system": "http://loinc.org", "code": "59408-5" }],
+          "text": "Oxygen saturation in Arterial blood by Pulse oximetry"
+        },
+        "valueQuantity": { "value": 95, "unit": "%" }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-p001-rr",
+        "subject": { "reference": "Patient/synthea-p001" },
+        "effectiveDateTime": "2026-03-14T08:00:00Z",
+        "code": {
+          "coding": [{ "system": "http://loinc.org", "code": "9279-1" }],
+          "text": "Respiratory rate"
+        },
+        "valueQuantity": { "value": 20, "unit": "/min" }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-p001-crp",
+        "subject": { "reference": "Patient/synthea-p001" },
+        "effectiveDateTime": "2026-03-14T07:40:00Z",
+        "code": {
+          "coding": [{ "system": "http://loinc.org", "code": "1988-5" }],
+          "text": "C-reactive protein"
+        },
+        "valueQuantity": { "value": 1.8, "unit": "mg/dL" }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "med-p001",
+        "subject": { "reference": "Patient/synthea-p001" },
+        "status": "active",
+        "medicationCodeableConcept": {
+          "text": "Aspirin 100 MG Oral Tablet"
+        }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "CarePlan",
+        "id": "cp-p001",
+        "subject": { "reference": "Patient/synthea-p001" },
+        "status": "active",
+        "title": "Neuro check and swallowing care"
+      }
+    }
+  ]
+}

@@ -4,7 +4,8 @@ const ALLOWED_PUBLIC_SYNTHETIC_FHIR_BASE_URLS = Object.freeze([
 ]);
 const ALLOWED_PUBLIC_PAYLOAD_SOURCES = Object.freeze([
   "smart-health-it-sandbox-synthetic",
-  "local-demo-fallback"
+  "local-demo-fallback",
+  "synthea-local-file"
 ]);
 
 function normalizeBaseUrl(value) {
