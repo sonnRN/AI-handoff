@@ -8,7 +8,7 @@ Primary name:
 
 Korean label:
 
-`설명 가능한 AI 간호 인계 엔진`
+`?ㅻ챸 媛?ν븳 AI 媛꾪샇 ?멸퀎 ?붿쭊`
 
 Recommended subtitle:
 
@@ -224,10 +224,10 @@ The current repository can evolve into this standalone demo without changing the
 Current mapping:
 
 - FHIR adapter and daily data creation:
-  [patients.js](/C:/Users/gse06/OneDrive/바탕%20화면/emr-demo%20수정버젼/netlify/functions/patients.js)
+  [patients.js](../netlify/functions/patients.js)
 
 - current UI and handoff rendering:
-  [script.js](/C:/Users/gse06/OneDrive/바탕%20화면/emr-demo%20수정버젼/script.js)
+  [script.js](../script.js)
 
 The future standalone algorithm demo should keep:
 
