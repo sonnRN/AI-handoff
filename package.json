@@ -16,7 +16,7 @@
     "mcp:server": "node src/mcp/server/fhirMcpServer.js",
     "build:public-demo-data": "node scripts/build-public-demo-data.js",
     "test:public-demo-bundle": "node tests/public-demo-bundle-smoke.js",
-    "test:emr:patients20": "node tests/emr-patient-list-20-smoke.js",
+    "test:emr:patients50": "node tests/emr-patient-list-50-smoke.js",
     "test:stage2": "node tests/stage2-summary-regression.js",
     "test:fhir:smoke": "node tests/fhir-stage12-smoke.js",
     "test:fhir:batch": "node tests/fhir-stage12-batch.js 5",

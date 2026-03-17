@@ -40,6 +40,7 @@ function buildLocalPatientSummaries(patients) {
   return patients.map((patient) => ({
     id: patient.id,
     room: patient.room || "-",
+    ward: patient.ward || "-",
     name: patient.name || `Patient ${patient.id}`,
     registrationNo: patient.registrationNo || String(patient.id),
     gender: patient.gender || "-",

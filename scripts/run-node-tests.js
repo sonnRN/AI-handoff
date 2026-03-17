@@ -8,7 +8,7 @@ const tests = [
   { label: "mcp runtime wiring", command: ["node", "tests/mcp-runtime-wiring-smoke.js"] },
   { label: "mcp gateway regression", command: ["node", "tests/mcp-gateway-regression.js"] },
   { label: "mcp patient smoke", command: ["node", "tests/mcp-patients-smoke.js"] },
-  { label: "emr patient list 20", command: ["node", "tests/emr-patient-list-20-smoke.js"] },
+  { label: "emr patient list 50", command: ["node", "tests/emr-patient-list-50-smoke.js"] },
   { label: "stage2 regression", command: ["node", "tests/stage2-summary-regression.js"] },
   { label: "canonical engine", command: ["node", "tests/canonical-engine-smoke.js"] },
   { label: "fhir smoke", command: ["node", "tests/fhir-stage12-smoke.js"] },

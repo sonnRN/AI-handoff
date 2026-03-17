@@ -7,6 +7,13 @@ const FHIR_BASE_URL = getPublicSafeFhirBaseUrl();
 const DEFAULT_PATIENT_COUNT = 8;
 const TIMELINE_DAYS = 10;
 const FHIR_FETCH_TIMEOUT_MS = Math.max(1000, Number.parseInt(String(process.env.FHIR_FETCH_TIMEOUT_MS || "8000"), 10) || 8000);
+const SYNTHETIC_WARD_LAYOUT = [
+  { ward: "ICU", roomPrefix: "ICU", roomBase: 1, roomDigits: 2, doctorTeam: "Synthetic Critical Care Team" },
+  { ward: "N병동", roomPrefix: "N", roomBase: 301, roomDigits: 3, doctorTeam: "Synthetic Neuro Team" },
+  { ward: "S병동", roomPrefix: "S", roomBase: 401, roomDigits: 3, doctorTeam: "Synthetic Surgical Team" },
+  { ward: "내과병동", roomPrefix: "M", roomBase: 501, roomDigits: 3, doctorTeam: "Synthetic Medical Team" },
+  { ward: "재활병동", roomPrefix: "R", roomBase: 601, roomDigits: 3, doctorTeam: "Synthetic Rehab Team" }
+];
 
 const VITAL_CODES = {
   systolic: ["8480-6"],
@@ -84,7 +91,7 @@ async function fetchPatientListPage(options = {}) {
 function normalizePatientCount(value) {
   const parsed = Number.parseInt(String(value || DEFAULT_PATIENT_COUNT), 10);
   if (!Number.isFinite(parsed)) return DEFAULT_PATIENT_COUNT;
-  return Math.max(1, Math.min(parsed, 20));
+  return Math.max(1, Math.min(parsed, 50));
 }
 
 async function fetchPatientDetail(id) {
@@ -204,10 +211,12 @@ async function safeFetchResources(path) {
 
 function normalizePatientSummary(resource, index) {
   if (!resource || !resource.id) return null;
+  const wardAssignment = buildSyntheticWardAssignment(resource.id, index + 1);
 
   return {
     id: resource.id,
-    room: buildSyntheticRoomLabel(resource.id),
+    room: wardAssignment.room,
+    ward: wardAssignment.ward,
     name: buildSyntheticPatientLabel(resource.id, index + 1),
     registrationNo: buildSyntheticRegistrationNo(resource.id),
     gender: toGender(resource.gender),
@@ -216,13 +225,14 @@ function normalizePatientSummary(resource, index) {
     admitDate: "-",
     bloodType: "-",
     bodyInfo: "-",
-    doctor: "-",
+    doctor: wardAssignment.doctorTeam,
     isolation: "-",
     external: true
   };
 }
 
 function normalizePatientDetail(data) {
+  const wardAssignment = buildSyntheticWardAssignment(data.patient.id);
   const latestEncounter = sortDesc(data.encounters, encounterDate)[0];
   const conditions = sortDesc(data.conditions, conditionDate);
   const observations = sortDesc(data.observations, observationDateTime);
@@ -267,7 +277,8 @@ function normalizePatientDetail(data) {
 
   return {
     id: data.patient.id,
-    room: buildSyntheticRoomLabel(data.patient.id),
+    room: wardAssignment.room,
+    ward: wardAssignment.ward,
     name: buildSyntheticPatientLabel(data.patient.id),
     registrationNo: buildSyntheticRegistrationNo(data.patient.id),
     gender: toGender(data.patient.gender),
@@ -276,7 +287,7 @@ function normalizePatientDetail(data) {
     admitDate: encounterDate(latestEncounter) || timelineDates[0],
     bloodType: findBloodType(observations),
     bodyInfo: buildBodyInfo(observationSummary.latestVital),
-    doctor: "FHIR Demo Care Team",
+    doctor: wardAssignment.doctorTeam,
     isolation: findIsolation(serviceRequests, conditions, documents),
     admitReason: findAdmitReason(latestEncounter, diagnosisList, procedures),
     admissionNote: buildAdmissionNote(latestEncounter, diagnosisList, allergyList, procedureList, reportList, serviceRequests, documents),
@@ -1296,8 +1307,22 @@ function buildSyntheticPatientLabel(id, fallbackIndex = 0) {
   return `Synthetic FHIR Patient ${buildSyntheticCode(id, fallbackIndex)}`;
 }
 
+function buildSyntheticWardAssignment(id, fallbackIndex = 0) {
+  const numericCode = Number.parseInt(buildSyntheticCode(id, fallbackIndex), 10) || Math.max(1, fallbackIndex || 1);
+  const absoluteIndex = Math.max(0, numericCode - 1);
+  const wardSpec = SYNTHETIC_WARD_LAYOUT[absoluteIndex % SYNTHETIC_WARD_LAYOUT.length];
+  const slot = Math.floor(absoluteIndex / SYNTHETIC_WARD_LAYOUT.length);
+  const roomNumber = String(wardSpec.roomBase + slot).padStart(wardSpec.roomDigits, "0");
+
+  return {
+    ward: wardSpec.ward,
+    room: `${wardSpec.roomPrefix}-${roomNumber}`,
+    doctorTeam: wardSpec.doctorTeam
+  };
+}
+
 function buildSyntheticRoomLabel(id) {
-  return `FHIR-DEMO-${buildSyntheticCode(id)}`;
+  return buildSyntheticWardAssignment(id).room;
 }
 
 function buildSyntheticRegistrationNo(id) {

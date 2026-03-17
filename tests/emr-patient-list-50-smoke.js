@@ -6,6 +6,7 @@ const REQUIRED_HEADER_FIELDS = [
   "id",
   "name",
   "room",
+  "ward",
   "registrationNo",
   "gender",
   "age",
@@ -33,10 +34,16 @@ function assertPatientForEmr(patient, label) {
 
 async function main() {
   const localPatients = loadLocalDemoPatients();
-  assert.strictEqual(localPatients.length, 20, "Local synthetic patient list must contain 20 patients");
+  assert.strictEqual(localPatients.length, 50, "Local synthetic patient list must contain 50 patients");
 
-  const { handler, patients } = await fetchPatientList({ count: 20 });
-  assert.strictEqual(patients.length, 20, "External or fallback patient list must return 20 patients");
+  const { handler, patients } = await fetchPatientList({ count: 50 });
+  assert.strictEqual(patients.length, 50, "External or fallback patient list must return 50 patients");
+  assert(patients.every((patient) => patient.ward && patient.ward !== "ER"), "Patient summaries must include non-ER ward labels");
+
+  const wardSet = new Set(patients.map((patient) => patient.ward));
+  assert(wardSet.has("ICU"), "Patient list must include ICU patients");
+  assert(wardSet.has("N병동"), "Patient list must include N병동 patients");
+  assert(wardSet.size >= 5, "Patient list must be distributed across at least five wards");
 
   const firstPatient = JSON.parse((await handler({ queryStringParameters: { id: String(patients[0].id) } })).body);
   const lastPatient = JSON.parse((await handler({ queryStringParameters: { id: String(patients[patients.length - 1].id) } })).body);
@@ -44,13 +51,14 @@ async function main() {
   assertPatientForEmr(firstPatient, "first patient");
   assertPatientForEmr(lastPatient, "last patient");
 
-  console.log("EMR patient list 20 smoke test passed.");
+  console.log("EMR patient list 50 smoke test passed.");
   console.log(`List source count: ${patients.length}`);
+  console.log(`Ward groups: ${Array.from(wardSet).sort().join(", ")}`);
   console.log(`First patient: ${firstPatient.name} (${firstPatient.id})`);
   console.log(`Last patient: ${lastPatient.name} (${lastPatient.id})`);
 }
 
 main().catch((error) => {
-  console.error(`EMR patient list 20 smoke test failed: ${error.message}`);
+  console.error(`EMR patient list 50 smoke test failed: ${error.message}`);
   process.exit(1);
 });

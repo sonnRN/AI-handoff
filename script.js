@@ -12,7 +12,8 @@ let patientLoadError = '';
 const patientDetailCache = new Map();
 let uiInitialized = false;
 const KOREA_TIMEZONE = 'Asia/Seoul';
-const PATIENT_LIST_COUNT = 20;
+const PATIENT_LIST_COUNT = 50;
+const WARD_DISPLAY_ORDER = ['ICU', 'N병동', 'S병동', '내과병동', '재활병동'];
 
 function unique(items) {
   return Array.from(new Set((items || []).filter(Boolean)));
@@ -63,9 +64,9 @@ async function loadPatientStore() {
 
     for (const endpoint of endpoints) {
       try {
-        const requestUrl = endpoint.kind === 'mcp-api'
-          ? `${endpoint.url}?count=${PATIENT_LIST_COUNT}`
-          : endpoint.url;
+        const requestUrl = endpoint.url.includes('?')
+          ? `${endpoint.url}&count=${PATIENT_LIST_COUNT}`
+          : `${endpoint.url}?count=${PATIENT_LIST_COUNT}`;
         const response = await fetch(requestUrl);
         if (!response.ok) throw new Error(`External patient list failed: ${response.status}`);
 
@@ -108,6 +109,13 @@ function isUsingExternalData() {
   return usingExternalData;
 }
 
+function formatDoctorDisplay(patient) {
+  const parts = [];
+  if (patient?.ward) parts.push(String(patient.ward).trim());
+  if (patient?.doctor) parts.push(String(patient.doctor).trim());
+  return parts.filter(Boolean).join(' / ') || '-';
+}
+
 function updateDataSourceLabel() {
   const header = document.querySelector('.list-header');
   if (!header) return;
@@ -118,6 +126,35 @@ function syncDateList(patient) {
   if (!patient || !patient.dailyData) return;
   dateList = Object.keys(patient.dailyData).sort();
   currentDateIndex = Math.min(currentDateIndex, Math.max(0, dateList.length - 1));
+}
+
+function getWardSortIndex(ward) {
+  const normalized = String(ward || '').trim();
+  const fixedIndex = WARD_DISPLAY_ORDER.indexOf(normalized);
+  return fixedIndex >= 0 ? fixedIndex : WARD_DISPLAY_ORDER.length + 1;
+}
+
+function groupPatientsByWard(patients) {
+  const groups = new Map();
+
+  (patients || []).forEach((patient) => {
+    const ward = String(patient?.ward || '기타병동').trim() || '기타병동';
+    if (!groups.has(ward)) groups.set(ward, []);
+    groups.get(ward).push(patient);
+  });
+
+  return Array.from(groups.entries())
+    .sort((left, right) => {
+      const wardDelta = getWardSortIndex(left[0]) - getWardSortIndex(right[0]);
+      if (wardDelta !== 0) return wardDelta;
+      return String(left[0]).localeCompare(String(right[0]), 'ko');
+    })
+    .map(([ward, items]) => ({
+      ward,
+      patients: items.slice().sort((left, right) => {
+        return String(left?.room || '').localeCompare(String(right?.room || ''), 'ko');
+      })
+    }));
 }
 
 async function getPatientData(pid) {
@@ -323,7 +360,7 @@ async function updateDashboard(pid) {
   setHTML('pastHistoryList', historyStr || '-');
 
   setText('pAdmit', p.admitDate);
-  setText('pDoc', p.doctor);
+    setText('pDoc', formatDoctorDisplay(p));
   setText('pIso', p.isolation);
   setText('pHD', `HD #${getHD(p.admitDate, dateKey)}`);
   setHTML('allergyBadges', renderAllergyBadges(p));
@@ -394,7 +431,7 @@ async function updateDashboard(pid) {
 
   // Update AI Panel
   const aiPtDiv = document.getElementById('aiPanelPatient');
-  if (aiPtDiv) aiPtDiv.textContent = `${p.name} (${p.age}/${p.gender}) - ${p.diagnosis}`;
+    if (aiPtDiv) aiPtDiv.textContent = `${p.ward ? `${p.ward} · ` : ''}${p.name} (${p.age}/${p.gender}) - ${p.diagnosis}`;
 }
 
 // ===== 🤖 AI 스마트 인계 로직 =====
@@ -1189,11 +1226,29 @@ function renderPatientList() {
       : '표시할 환자 데이터가 없습니다.';
     list.innerHTML = `<div class="pt-empty">${errorText}</div>`;
     const counter = document.getElementById('patientCount');
-    if (counter) counter.textContent = '0';
-    return;
-  }
+      if (counter) counter.textContent = '0';
+      return;
+    }
 
-  list.innerHTML = patientStore.map(p => `<div class="pt-row" data-id="${p.id}" onclick="selectPatient('${p.id}')"><span class="room">${p.room || '-'}</span><span class="name">${p.name}</span></div>`).join('');
+  const wardGroups = groupPatientsByWard(patientStore);
+  list.innerHTML = wardGroups.map((group) => {
+    const rows = group.patients.map((patient) => `
+      <div class="pt-row" data-id="${patient.id}" data-ward="${escapeHtml(group.ward)}" onclick="selectPatient('${patient.id}')">
+        <span class="room">${escapeHtml(patient.room || '-')}</span>
+        <span class="name">${escapeHtml(patient.name || '-')}</span>
+      </div>
+    `).join('');
+
+    return `
+      <section class="pt-ward-group" data-ward="${escapeHtml(group.ward)}">
+        <div class="pt-ward-header">
+          <span class="pt-ward-name">${escapeHtml(group.ward)}</span>
+          <span class="pt-ward-count">${group.patients.length}명</span>
+        </div>
+        ${rows}
+      </section>
+    `;
+  }).join('');
   document.getElementById('patientCount').textContent = patientStore.length;
 }
 
@@ -1304,7 +1359,7 @@ updateDashboard = async function (pid) {
   setText('pBody', p.bodyInfo);
   setHTML('pDiag', p.diagnosis);
   setText('pAdmit', p.admitDate);
-  setText('pDoc', p.doctor);
+    setText('pDoc', formatDoctorDisplay(p));
   setText('pIso', p.isolation);
   setText('pHD', `HD #${getHD(p.admitDate, dateKey)}`);
   setHTML('allergyBadges', renderAllergyBadges(p));
@@ -1362,7 +1417,7 @@ updateDashboard = async function (pid) {
   setHTML('docOrderList', docHtml || '특이 처방 없음');
 
 const aiPtDiv = document.getElementById('aiPanelPatient');
-  if (aiPtDiv) aiPtDiv.textContent = `${p.name} (${p.age}/${p.gender}) - ${p.diagnosis}`;
+  if (aiPtDiv) aiPtDiv.textContent = `${p.ward ? `${p.ward} · ` : ''}${p.name} (${p.age}/${p.gender}) - ${p.diagnosis}`;
 };
 
 function generateNarrativeSBAR(p, startData, endData, dates) {
@@ -2057,6 +2112,7 @@ function normalizeDailySnapshot(patient, date, data) {
       gender: patient.gender || "-",
       age: patient.age || "-",
       room: patient.room || "-",
+      ward: patient.ward || "-",
       diagnosis: normalizeClinicalPlaceholderText(patient.diagnosis),
       admissionReason: normalizeNarrativeText(patient.admissionNote || patient.admitReason || "-"),
       pastHistory: patientHistory,
@@ -3338,7 +3394,7 @@ updateDashboard = async function (pid) {
   setText('pBody', p.bodyInfo);
   setHTML('pDiag', p.diagnosis);
   setText('pAdmit', p.admitDate);
-  setText('pDoc', p.doctor);
+    setText('pDoc', formatDoctorDisplay(p));
   setText('pIso', p.isolation);
   setText('pHD', `HD #${getHD(p.admitDate, dateKey)}`);
   setHTML('allergyBadges', renderAllergyBadges(p));
@@ -3402,5 +3458,5 @@ updateDashboard = async function (pid) {
   setHTML('docOrderList', docHtml || '특이 처방 없음');
 
   const aiPtDiv = document.getElementById('aiPanelPatient');
-  if (aiPtDiv) aiPtDiv.textContent = `${p.name} (${p.age}/${p.gender}) - ${p.diagnosis}`;
+  if (aiPtDiv) aiPtDiv.textContent = `${p.ward ? `${p.ward} · ` : ''}${p.name} (${p.age}/${p.gender}) - ${p.diagnosis}`;
 };

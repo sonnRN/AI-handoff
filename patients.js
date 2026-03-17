@@ -987,10 +987,23 @@ const SYNTHETIC_PATIENT_CODES = [
     "Alpha", "Beta", "Gamma", "Delta", "Epsilon",
     "Zeta", "Eta", "Theta", "Iota", "Kappa",
     "Lambda", "Mu", "Nu", "Xi", "Omicron",
-    "Pi", "Rho", "Sigma", "Tau", "Upsilon"
+    "Pi", "Rho", "Sigma", "Tau", "Upsilon",
+    "Phi", "Chi", "Psi", "Omega", "Atlas",
+    "Nova", "Orion", "Lyra", "Vega", "Luna",
+    "Solar", "Aqua", "Cedar", "Maple", "River",
+    "Stone", "Harbor", "Clover", "Dawn", "Echo",
+    "Flint", "Glade", "Haven", "Iris", "Juniper"
 ];
 
-const patients = expandSyntheticPatients(basePatients, 20);
+const SYNTHETIC_WARD_LAYOUT = [
+    { ward: "ICU", roomPrefix: "ICU", roomBase: 1, roomDigits: 2, doctorTeam: "Demo Critical Care Team" },
+    { ward: "N병동", roomPrefix: "N", roomBase: 301, roomDigits: 3, doctorTeam: "Demo Neuro Team" },
+    { ward: "S병동", roomPrefix: "S", roomBase: 401, roomDigits: 3, doctorTeam: "Demo Surgical Team" },
+    { ward: "내과병동", roomPrefix: "M", roomBase: 501, roomDigits: 3, doctorTeam: "Demo Medical Team" },
+    { ward: "재활병동", roomPrefix: "R", roomBase: 601, roomDigits: 3, doctorTeam: "Demo Rehab Team" }
+];
+
+const patients = expandSyntheticPatients(basePatients, 50);
 
 function expandSyntheticPatients(baseList, targetCount) {
     const expanded = [];
@@ -1003,13 +1016,15 @@ function expandSyntheticPatients(baseList, targetCount) {
         const code = SYNTHETIC_PATIENT_CODES[index] || `Case-${String(patientNumber).padStart(2, '0')}`;
         const admitDate = shiftIsoDate(template.admitDate, cycle);
         const ageValue = Number.parseInt(String(template.age || "0"), 10);
+        const wardAssignment = buildSyntheticWardAssignment(patientNumber);
 
         clone.id = patientNumber;
         clone.name = `Synthetic Patient ${code}`;
-        clone.room = `SYN-ROOM-${String(patientNumber).padStart(2, '0')}`;
+        clone.ward = wardAssignment.ward;
+        clone.room = wardAssignment.room;
         clone.registrationNo = `SYN-${String(patientNumber).padStart(4, '0')}`;
         clone.age = Number.isFinite(ageValue) ? String(Math.max(19, ageValue + cycle)) : String(40 + patientNumber);
-        clone.doctor = `${template.doctor} ${cycle > 0 ? `Unit ${cycle + 1}` : "Unit 1"}`;
+        clone.doctor = `${wardAssignment.doctorTeam} ${cycle > 0 ? `Unit ${cycle + 1}` : "Unit 1"}`;
         clone.admitDate = admitDate;
         clone.dischargeDate = "TBD";
         clone.admissionNote = `${template.admissionNote} Synthetic variant ${patientNumber} is used for public demo validation.`;
@@ -1019,6 +1034,19 @@ function expandSyntheticPatients(baseList, targetCount) {
     }
 
     return expanded;
+}
+
+function buildSyntheticWardAssignment(patientNumber) {
+    const absoluteIndex = Math.max(0, Number(patientNumber || 1) - 1);
+    const wardSpec = SYNTHETIC_WARD_LAYOUT[absoluteIndex % SYNTHETIC_WARD_LAYOUT.length];
+    const slot = Math.floor(absoluteIndex / SYNTHETIC_WARD_LAYOUT.length);
+    const roomNumber = String(wardSpec.roomBase + slot).padStart(wardSpec.roomDigits, '0');
+
+    return {
+        ward: wardSpec.ward,
+        room: `${wardSpec.roomPrefix}-${roomNumber}`,
+        doctorTeam: wardSpec.doctorTeam
+    };
 }
 
 function shiftIsoDate(value, daysToAdd) {
