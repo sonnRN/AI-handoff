@@ -134,7 +134,8 @@ async function fetchPatientList(options = {}) {
       handler: resilientHandler,
       patients: payload.patients,
       source: payload.source || "smart-health-it-sandbox",
-      fallback: false,
+      fallback: Boolean(payload.mcp?.fallback || payload.fallback),
+      fallbackReason: payload.mcp?.reason || "",
       pageInfo: payload.pageInfo || null,
       mcp: payload.mcp || null
     };

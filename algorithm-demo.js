@@ -452,6 +452,112 @@ const FAILURE_RULES = [
   }
 ];
 
+const PROTOTYPE_ASSUMPTION = '가정: 별도 meeting notes 파일이 없어 docs/PROJECT_BRIEF.md와 docs/product-spec.md를 회의 노트로 간주했다. 가장 단순한 해석은 환자/기간 선택 -> 변화 검토 -> SBAR 초안 확인 흐름이다.';
+
+const PROTOTYPE_FLOW = [
+  '환자와 기준 기간을 선택한다.',
+  '변화 감지 결과를 우선순위 순서대로 검토한다.',
+  'SBAR 초안과 다음 근무조 추천 액션을 확인한다.'
+];
+
+const PROTOTYPE_ACCEPTANCE = [
+  '상태 변화, 신규 오더, 중단 오더, 활력징후 이상, 주요 검사 변화, 간호수행이 분리되어 보여야 한다.',
+  'Recommendation은 행동 중심 문장으로 제한되어야 한다.',
+  '근거가 부족한 항목은 상위 우선순위에 올리지 않아야 한다.',
+  '변화가 거의 없을 때는 배경과 지속 관찰만 강조해야 한다.'
+];
+
+const PROTOTYPE_STEPS = [
+  {
+    id: 'scope',
+    label: '1. 범위 선택',
+    tag: 'Happy path',
+    state: '입력 확정',
+    title: '환자와 인계 기간을 선택한다',
+    body: '간호사는 환자 1명과 최근 n일 기간을 선택한다. 시스템은 해당 기간의 요약 대상 데이터를 고정하고 이후 단계에서 같은 기준으로 변화와 SBAR 초안을 만든다.',
+    highlights: [
+      '기본 입력은 환자, 기준 날짜, 비교 기간 3개다.',
+      '선택 즉시 분석 기준이 고정되어 이후 단계와 일관되게 연결된다.',
+      '노이즈를 줄이기 위해 원문 FHIR 목록 대신 간호 인계용 범위만 노출한다.'
+    ],
+    screenParts: ['환자 선택', '기준 날짜', '기간 선택', '분석 시작 버튼', '요약 가정 표시'],
+    interactions: [
+      { title: '환자 선택', description: '다른 환자를 선택하면 이후 검토 패널이 해당 환자 기준으로 갱신된다.' },
+      { title: '기간 변경', description: '기간을 바꾸면 변화 감지와 SBAR 초안의 비교 기준이 다시 계산된다.' }
+    ],
+    primaryAction: '변화 검토로 이동',
+    secondaryAction: '변화 적음 상태 보기'
+  },
+  {
+    id: 'triage',
+    label: '2. 변화 검토',
+    tag: 'Happy path',
+    state: '우선순위 판별',
+    title: '핵심 변화만 우선순위 순으로 검토한다',
+    body: '시스템은 회의 노트 우선순위 규칙에 따라 상태 변화, 신규 오더, 중단 오더, 활력징후 이상, 주요 검사 변화, 간호수행을 정렬해서 보여준다.',
+    highlights: [
+      '상단에는 즉시 전달해야 할 변화만 남긴다.',
+      '각 항목은 분류, 우선순위 이유, 근거 연결을 함께 표시한다.',
+      '배경 정보는 하단으로 내려 중복 전달을 줄인다.'
+    ],
+    screenParts: ['우선순위 이벤트 목록', '근거 연결', '배경 정보 접힘 영역', '보류 항목 영역'],
+    interactions: [
+      { title: '이벤트 클릭', description: '항목을 누르면 감지 이유와 연결된 근거를 열어 확인한다.' },
+      { title: '보류 보기', description: '근거가 부족한 항목은 별도 영역에서 추가 확인 필요로 분리된다.' }
+    ],
+    primaryAction: 'SBAR 초안 보기',
+    secondaryAction: '근거 부족 상태 보기'
+  },
+  {
+    id: 'draft',
+    label: '3. SBAR 초안',
+    tag: 'Happy path',
+    state: '전달 준비',
+    title: '구조화된 SBAR 초안과 액션을 확인한다',
+    body: '최종 화면은 Situation, Background, Assessment, Recommendation 순서로 초안을 보여준다. Recommendation은 다음 근무조가 바로 확인하거나 수행해야 할 액션 중심으로 제한된다.',
+    highlights: [
+      'Situation에는 현재 가장 중요한 변화와 신규/중단 오더가 우선 노출된다.',
+      'Background에는 반복되거나 지속되는 문제만 남긴다.',
+      'Recommendation에는 확인, 보고, 준비, 모니터링 액션만 유지한다.'
+    ],
+    screenParts: ['SBAR 미리보기', '상위 우선순위 카드', '다음 근무조 액션', '보류/추가 확인 필요'],
+    interactions: [
+      { title: '섹션 검토', description: '각 SBAR 섹션에서 어떤 변화가 문장에 반영됐는지 역추적한다.' },
+      { title: '초안 확정', description: '사용자는 구조화된 인계 초안을 검토한 뒤 전달 준비 상태로 넘긴다.' }
+    ],
+    primaryAction: '처음 단계로 돌아가기',
+    secondaryAction: '변화 적음 상태 보기'
+  }
+];
+
+const PROTOTYPE_EDGE_STATES = [
+  {
+    id: 'stable',
+    label: '변화 적음',
+    title: '변화가 거의 없는 경우',
+    description: '중요 변화 점수가 임계값 아래면 상단 인계는 짧아지고, 지속 관찰과 배경만 남긴다.',
+    items: [
+      '상위 이벤트 목록 대신 안정 유지와 지속 관찰만 표시한다.',
+      'Recommendation은 신규 액션 대신 정규 모니터링 지속으로 축소한다.',
+      '중복 배경은 접어서 전달 분량을 줄인다.'
+    ]
+  },
+  {
+    id: 'insufficient-evidence',
+    label: '근거 부족',
+    title: '근거 연결이 부족한 경우',
+    description: '감지 후보는 있으나 근거 연결이 충분하지 않으면 상단 우선순위에서 제외하고 보류한다.',
+    items: [
+      '상위 우선순위 카드에 올리지 않는다.',
+      '보류/추가 확인 필요 영역으로 분리한다.',
+      'SBAR 본문에는 확정된 사실만 남기고 추가 확인 필요 문구로 대체한다.'
+    ]
+  }
+];
+
+let activePrototypeStepIndex = 0;
+let activePrototypeEdgeIndex = 0;
+
 document.addEventListener('DOMContentLoaded', initializeAlgorithmExplainer);
 
 function initializeAlgorithmExplainer() {
@@ -474,6 +580,129 @@ function initializeAlgorithmExplainer() {
   renderGateList('verificationRuleList', VERIFICATION_RULES);
   renderGateList('failureRuleList', FAILURE_RULES);
   renderAudienceBridge();
+  renderPrototypeSection();
+}
+
+function renderPrototypeSection() {
+  const assumptionRoot = document.getElementById('prototypeAssumption');
+  const flowRoot = document.getElementById('prototypeFlowList');
+  const criteriaRoot = document.getElementById('prototypeCriteriaList');
+  if (!assumptionRoot || !flowRoot || !criteriaRoot) return;
+
+  assumptionRoot.textContent = PROTOTYPE_ASSUMPTION;
+  flowRoot.innerHTML = PROTOTYPE_FLOW.map((item) => renderPrototypeCheckItem(item)).join('');
+  criteriaRoot.innerHTML = PROTOTYPE_ACCEPTANCE.map((item) => renderPrototypeCheckItem(item)).join('');
+  renderPrototypeStepTabs();
+  renderPrototypeEdgeTabs();
+  renderPrototypeStepContent();
+  renderPrototypeEdgeContent();
+}
+
+function renderPrototypeStepTabs() {
+  const root = document.getElementById('prototypeStepTabs');
+  if (!root) return;
+
+  root.innerHTML = PROTOTYPE_STEPS.map((step, index) => `
+    <button
+      type="button"
+      class="prototype-tab-btn ${index === activePrototypeStepIndex ? 'is-active' : ''}"
+      data-prototype-step="${index}"
+    >${escapeHtml(step.label)}</button>
+  `).join('');
+
+  root.querySelectorAll('[data-prototype-step]').forEach((button) => {
+    button.addEventListener('click', () => {
+      activePrototypeStepIndex = Number(button.getAttribute('data-prototype-step'));
+      renderPrototypeStepTabs();
+      renderPrototypeStepContent();
+    });
+  });
+}
+
+function renderPrototypeStepContent() {
+  const step = PROTOTYPE_STEPS[activePrototypeStepIndex];
+  if (!step) return;
+
+  const tagRoot = document.getElementById('prototypeScreenTag');
+  const stateRoot = document.getElementById('prototypeScreenState');
+  const titleRoot = document.getElementById('prototypeScreenTitle');
+  const bodyRoot = document.getElementById('prototypeScreenBody');
+  const highlightRoot = document.getElementById('prototypeScreenHighlights');
+  const partsRoot = document.getElementById('prototypeScreenParts');
+  const interactionsRoot = document.getElementById('prototypeInteractions');
+  const primaryButton = document.getElementById('prototypePrimaryAction');
+  const secondaryButton = document.getElementById('prototypeSecondaryAction');
+  if (!tagRoot || !stateRoot || !titleRoot || !bodyRoot || !highlightRoot || !partsRoot || !interactionsRoot || !primaryButton || !secondaryButton) return;
+
+  tagRoot.textContent = step.tag;
+  stateRoot.textContent = step.state;
+  titleRoot.textContent = step.title;
+  bodyRoot.textContent = step.body;
+  highlightRoot.innerHTML = step.highlights.map((item) => `<div class="prototype-highlight-item">${escapeHtml(item)}</div>`).join('');
+  partsRoot.innerHTML = step.screenParts.map((item) => `<span class="prototype-token">${escapeHtml(item)}</span>`).join('');
+  interactionsRoot.innerHTML = step.interactions.map((item) => `
+    <div class="prototype-check-item">
+      <strong>${escapeHtml(item.title)}</strong>
+      <span>${escapeHtml(item.description)}</span>
+    </div>
+  `).join('');
+
+  primaryButton.textContent = step.primaryAction;
+  primaryButton.onclick = () => {
+    activePrototypeStepIndex = (activePrototypeStepIndex + 1) % PROTOTYPE_STEPS.length;
+    renderPrototypeStepTabs();
+    renderPrototypeStepContent();
+  };
+
+  secondaryButton.textContent = step.secondaryAction;
+  secondaryButton.onclick = () => {
+    activePrototypeEdgeIndex = activePrototypeStepIndex === 1 ? 1 : 0;
+    renderPrototypeEdgeTabs();
+    renderPrototypeEdgeContent();
+  };
+}
+
+function renderPrototypeEdgeTabs() {
+  const root = document.getElementById('prototypeEdgeTabs');
+  if (!root) return;
+
+  root.innerHTML = PROTOTYPE_EDGE_STATES.map((state, index) => `
+    <button
+      type="button"
+      class="prototype-tab-btn ${index === activePrototypeEdgeIndex ? 'is-active' : ''}"
+      data-prototype-edge="${index}"
+    >${escapeHtml(state.label)}</button>
+  `).join('');
+
+  root.querySelectorAll('[data-prototype-edge]').forEach((button) => {
+    button.addEventListener('click', () => {
+      activePrototypeEdgeIndex = Number(button.getAttribute('data-prototype-edge'));
+      renderPrototypeEdgeTabs();
+      renderPrototypeEdgeContent();
+    });
+  });
+}
+
+function renderPrototypeEdgeContent() {
+  const state = PROTOTYPE_EDGE_STATES[activePrototypeEdgeIndex];
+  const root = document.getElementById('prototypeEdgeBody');
+  if (!state || !root) return;
+
+  root.innerHTML = `
+    <article class="prototype-edge-card">
+      <strong>${escapeHtml(state.title)}</strong>
+      <div>${escapeHtml(state.description)}</div>
+    </article>
+    ${state.items.map((item) => renderPrototypeCheckItem(item)).join('')}
+  `;
+}
+
+function renderPrototypeCheckItem(text) {
+  return `
+    <div class="prototype-check-item">
+      <span>${escapeHtml(text)}</span>
+    </div>
+  `;
 }
 
 function renderStageCards() {

@@ -17,7 +17,7 @@ function jsonResponse(statusCode, body) {
 function parseCount(value, fallback = 8) {
   const parsed = Number.parseInt(String(value || fallback), 10);
   if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(1, Math.min(parsed, 50));
+  return Math.max(1, Math.min(parsed, 80));
 }
 
 exports.handler = async function handler(event) {

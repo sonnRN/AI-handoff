@@ -2,10 +2,11 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>40F1 지능형 인계 시스템</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body data-app-mode="emr-demo">
   <div class="top-bar">
     <span class="top-title">40F1 지능형 인계 시스템 (AI-EMR)</span>
     <div class="top-bar-actions">
@@ -232,10 +233,10 @@
 
   <div class="overlay" id="modalOverlay" onclick="closeAllModals()"></div>
 
-  <script src="runtime-config.js"></script>
-  <script src="script.js"></script>
-  <script src="stage2-overrides.js"></script>
-  <script src="stage2-period-overrides.js"></script>
-  <script src="handoff-engine.js"></script>
+  <script src="runtime-config.js" defer></script>
+  <script src="script.js" defer></script>
+  <script src="stage2-overrides.js" defer></script>
+  <script src="stage2-period-overrides.js" defer></script>
+  <script src="handoff-engine.js" defer></script>
 </body>
 </html>

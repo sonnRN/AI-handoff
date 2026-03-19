@@ -4,11 +4,18 @@
   box-sizing: border-box;
 }
 
+html {
+  height: 100%;
+}
+
 body {
   font-family: "맑은 고딕", "Malgun Gothic", sans-serif;
   font-size: 14px;
   background: #d4d0c8;
   color: #000;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -29,6 +36,8 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .public-release-banner {
@@ -44,6 +53,8 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .top-link-btn {
@@ -108,6 +119,7 @@ body {
 .ai-scores {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .score-item {
@@ -141,6 +153,7 @@ body {
   display: flex;
   gap: 20px;
   margin-bottom: 4px;
+  flex-wrap: wrap;
 }
 
 .patient-info-row:last-child {
@@ -152,6 +165,7 @@ body {
   gap: 12px;
   align-items: stretch;
   margin-top: 8px;
+  flex-wrap: wrap;
 }
 
 .allergy-strip {
@@ -159,6 +173,7 @@ body {
   display: flex;
   gap: 8px;
   align-items: flex-start;
+  min-width: min(100%, 320px);
 }
 
 .flag-label {
@@ -195,11 +210,15 @@ body {
   border-radius: 6px;
   font-weight: bold;
   line-height: 1.45;
+  word-break: keep-all;
 }
 
 .info-cell {
   font-size: 13px;
   padding: 2px 0;
+  flex: 1 1 180px;
+  min-width: 0;
+  word-break: break-word;
 }
 
 .info-cell b {
@@ -217,16 +236,19 @@ body {
 /* ===== 메인 컨테이너 ===== */
 .main-container {
   display: flex;
-  height: calc(100vh - 95px);
+  flex: 1;
+  min-height: 0;
 }
 
 /* ===== 환자 리스트 ===== */
 .patient-list {
-  width: 190px;
+  width: 220px;
   background: #fff;
   border-right: 1px solid #999;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  flex-shrink: 0;
 }
 
 .list-header {
@@ -393,14 +415,16 @@ textarea {
   overflow-x: auto;
   background: #c0c0c0;
   gap: 1px;
+  min-height: 0;
 }
 
 .column {
-  min-width: 140px;
-  flex: 1;
+  min-width: 280px;
+  flex: 1 0 280px;
   display: flex;
   flex-direction: column;
   background: #fff;
+  min-height: 0;
 }
 
 .column-header {
@@ -410,6 +434,8 @@ textarea {
   font-size: 13px;
   text-align: center;
   border-bottom: 1px solid #999;
+  line-height: 1.4;
+  word-break: keep-all;
 }
 
 .column-body {
@@ -417,6 +443,7 @@ textarea {
   overflow-y: auto;
   padding: 4px;
   font-size: 13px;
+  min-height: 0;
 }
 
 .sub-section {
@@ -431,6 +458,8 @@ textarea {
   border: 1px solid #ccc;
   border-bottom: none;
   color: #333;
+  line-height: 1.4;
+  word-break: keep-all;
 }
 
 .sub-content {
@@ -440,6 +469,7 @@ textarea {
   border: 1px solid #ccc;
   background: #fff;
   min-height: 30px;
+  word-break: break-word;
 }
 
 .sub-content.scrollable {
@@ -3313,4 +3343,75 @@ textarea {
   gap: 8px;
   font-size: 10px;
   color: #6f8293;
+}
+
+@media (max-width: 1200px) {
+  body {
+    overflow: auto;
+  }
+
+  .main-container {
+    flex-direction: column;
+  }
+
+  .patient-list {
+    width: 100%;
+    max-height: 240px;
+    border-right: none;
+    border-bottom: 1px solid #999;
+  }
+
+  .columns-container {
+    min-height: 60vh;
+  }
+}
+
+@media (max-width: 860px) {
+  .top-bar-actions,
+  .ai-scores {
+    justify-content: flex-start;
+  }
+
+  .top-title {
+    font-size: 14px;
+  }
+
+  .score-item {
+    font-size: 12px;
+  }
+
+  .patient-info-row {
+    gap: 8px;
+  }
+
+  .info-cell,
+  .allergy-strip,
+  .caution-card {
+    flex-basis: 100%;
+  }
+
+  .column {
+    min-width: 240px;
+    flex-basis: 240px;
+  }
+
+  .float-btn-group {
+    right: 12px;
+    left: 12px;
+    bottom: 12px;
+    flex-direction: column;
+  }
+
+  .float-btn {
+    width: 100%;
+  }
+
+  .ai-panel {
+    width: min(100vw, 420px);
+  }
+
+  .detail-modal,
+  .detail-modal.wide-modal {
+    width: min(94vw, 900px);
+  }
 }

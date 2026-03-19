@@ -6,14 +6,14 @@ let currentDateIndex = 9;
 let dateList = [];
 let patientStore = [];
 let usingExternalData = false;
-let externalApiBase = 'api/patients-mcp';
+let externalApiBase = '/api/patients-mcp';
 let externalDataSourceLabel = '';
 let patientLoadError = '';
 const patientDetailCache = new Map();
 let uiInitialized = false;
 const KOREA_TIMEZONE = 'Asia/Seoul';
-const PATIENT_LIST_COUNT = 50;
-const WARD_DISPLAY_ORDER = ['ICU', 'N병동', 'S병동', '내과병동', '재활병동'];
+const PATIENT_LIST_COUNT = 60;
+const WARD_DISPLAY_ORDER = ['내과계중환자실', '외과계중환자실', 'N병동', 'S병동', '내과병동', '재활병동'];
 
 function unique(items) {
   return Array.from(new Set((items || []).filter(Boolean)));
@@ -205,9 +205,6 @@ window.handoffAppApi = {
 };
 
 // 초기화
-document.addEventListener('DOMContentLoaded', function () {
-});
-
 function setupUI() {
   if (uiInitialized) return;
   uiInitialized = true;
@@ -1316,6 +1313,7 @@ function buildExternalSourceLabel(payload) {
   const mode = String(payload?.mcp?.connectionMode || '').trim();
   if (mode === 'server') return '합성 FHIR MCP 서버';
   if (mode === 'direct-fallback') return '합성 FHIR MCP 게이트웨이';
+  if (payload?.source === 'smart-health-it-sandbox-synthetic') return '합성 FHIR 공용 샌드박스';
   return '합성 FHIR MCP';
 }
 
@@ -1337,11 +1335,19 @@ function buildPatientDataEndpoints() {
       kind: 'remote-mcp',
       url: buildApiUrl(remoteApiBase, '/api/patients-mcp')
     });
+    endpoints.push({
+      kind: 'remote-direct',
+      url: buildApiUrl(remoteApiBase, '/api/patients')
+    });
   }
 
   endpoints.push({
     kind: 'same-origin-mcp',
     url: '/api/patients-mcp'
+  });
+  endpoints.push({
+    kind: 'same-origin-direct',
+    url: '/api/patients'
   });
 
   return dedupeEndpoints(endpoints);

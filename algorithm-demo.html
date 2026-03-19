@@ -6,7 +6,7 @@
   <title>설명 가능한 인공지능 간호 인계 엔진</title>
   <link rel="stylesheet" href="algorithm-demo.css">
 </head>
-<body>
+<body data-app-mode="engine-demo">
   <header class="engine-shell-header">
     <div>
       <div class="engine-eyebrow">독립형 알고리즘 프로토타입</div>
@@ -196,6 +196,66 @@
     <div class="pipeline-step active">6. 근거 검증 및 환각 차단</div>
   </section>
 
+  <section class="explainer-card explainer-card-wide prototype-section">
+    <div class="engine-card-header">
+      <div>
+        <div class="engine-eyebrow">Interactive Prototype</div>
+        <h2>회의 노트 기반 인계 플로우 프로토타입</h2>
+        <p id="prototypeAssumption" class="engine-subcopy"></p>
+      </div>
+      <div class="engine-mini-badge">Happy path + edge states</div>
+    </div>
+    <div class="engine-card-body prototype-layout">
+      <aside class="prototype-side-panel">
+        <h3>핵심 플로우</h3>
+        <div id="prototypeFlowList" class="prototype-checklist"></div>
+        <h3>수용 기준</h3>
+        <div id="prototypeCriteriaList" class="prototype-checklist"></div>
+      </aside>
+
+      <div class="prototype-main-panel">
+        <div id="prototypeStepTabs" class="prototype-tab-row"></div>
+        <article class="prototype-screen-card">
+          <div class="prototype-screen-meta">
+            <span id="prototypeScreenTag" class="prototype-state-tag"></span>
+            <span id="prototypeScreenState" class="prototype-state-copy"></span>
+          </div>
+          <h3 id="prototypeScreenTitle"></h3>
+          <p id="prototypeScreenBody" class="prototype-body-copy"></p>
+          <div id="prototypeScreenHighlights" class="prototype-highlight-list"></div>
+          <div class="prototype-action-row">
+            <button id="prototypePrimaryAction" type="button" class="engine-run-btn">다음 단계</button>
+            <button id="prototypeSecondaryAction" type="button" class="engine-link-btn">엣지 상태 보기</button>
+          </div>
+        </article>
+
+        <div class="prototype-grid">
+          <article class="prototype-panel">
+            <div class="prototype-panel-header">
+              <h3>화면 구성</h3>
+            </div>
+            <div id="prototypeScreenParts" class="prototype-token-list"></div>
+          </article>
+
+          <article class="prototype-panel">
+            <div class="prototype-panel-header">
+              <h3>상호작용</h3>
+            </div>
+            <div id="prototypeInteractions" class="prototype-checklist"></div>
+          </article>
+        </div>
+
+        <article class="prototype-panel">
+          <div class="prototype-panel-header">
+            <h3>엣지 상태</h3>
+          </div>
+          <div id="prototypeEdgeTabs" class="prototype-tab-row prototype-tab-row-compact"></div>
+          <div id="prototypeEdgeBody" class="prototype-edge-body"></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
   <main class="algorithm-explainer">
     <section class="explainer-card explainer-card-wide">
       <div class="engine-card-header">
@@ -357,11 +417,11 @@
     </section>
   </main>
 
-  <script src="runtime-config.js"></script>
-  <script src="script.js"></script>
-  <script src="stage2-overrides.js"></script>
-  <script src="stage2-period-overrides.js"></script>
-  <script src="handoff-engine.js"></script>
-  <script src="algorithm-demo.js"></script>
+  <script src="runtime-config.js" defer></script>
+  <script src="script.js" defer></script>
+  <script src="stage2-overrides.js" defer></script>
+  <script src="stage2-period-overrides.js" defer></script>
+  <script src="handoff-engine.js" defer></script>
+  <script src="algorithm-demo.js" defer></script>
 </body>
 </html>

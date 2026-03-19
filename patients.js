@@ -996,14 +996,15 @@ const SYNTHETIC_PATIENT_CODES = [
 ];
 
 const SYNTHETIC_WARD_LAYOUT = [
-    { ward: "ICU", roomPrefix: "ICU", roomBase: 1, roomDigits: 2, doctorTeam: "Demo Critical Care Team" },
+    { ward: "내과계중환자실", roomPrefix: "MICU", roomBase: 1, roomDigits: 2, doctorTeam: "Demo Medical Critical Care Team" },
+    { ward: "외과계중환자실", roomPrefix: "SICU", roomBase: 21, roomDigits: 2, doctorTeam: "Demo Surgical Critical Care Team" },
     { ward: "N병동", roomPrefix: "N", roomBase: 301, roomDigits: 3, doctorTeam: "Demo Neuro Team" },
     { ward: "S병동", roomPrefix: "S", roomBase: 401, roomDigits: 3, doctorTeam: "Demo Surgical Team" },
     { ward: "내과병동", roomPrefix: "M", roomBase: 501, roomDigits: 3, doctorTeam: "Demo Medical Team" },
     { ward: "재활병동", roomPrefix: "R", roomBase: 601, roomDigits: 3, doctorTeam: "Demo Rehab Team" }
 ];
 
-const patients = expandSyntheticPatients(basePatients, 50);
+const patients = expandSyntheticPatients(basePatients, 60);
 
 function expandSyntheticPatients(baseList, targetCount) {
     const expanded = [];

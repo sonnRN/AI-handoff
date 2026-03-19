@@ -10,9 +10,12 @@ const FHIR_FETCH_TIMEOUT_MS = Math.max(1000, Number.parseInt(String(process.env.
 const PATIENT_BATCH_FETCH_SIZE = 20;
 const LIST_PAGE_FETCH_SIZE = 30;
 const MAX_LIST_FETCH_PAGES = 8;
-const BALANCED_POOL_MIN = 60;
-const BALANCED_POOL_PADDING = 24;
-const BALANCED_POOL_MAX = 100;
+const DEPARTMENT_MIN_PATIENT_COUNT = 5;
+const TARGET_PATIENT_LIST_COUNT = 60;
+const MAX_PATIENT_COUNT = 80;
+const BALANCED_POOL_MIN = 90;
+const BALANCED_POOL_PADDING = 30;
+const BALANCED_POOL_MAX = 140;
 const DEPARTMENT_SEED_SEARCHES = [
   { department: "감염내과", term: "sepsis", count: 12 },
   { department: "감염내과", term: "infection", count: 12 },
@@ -47,10 +50,16 @@ const DEPARTMENT_SEED_SEARCHES = [
   { department: "재활의학과", term: "weakness", count: 10 },
   { department: "재활의학과", term: "deconditioning", count: 8 },
   { department: "재활의학과", term: "gait", count: 8 },
-  { department: "이비인후과", term: "sinusitis", count: 2 }
+  { department: "이비인후과", term: "sinusitis", count: 6 },
+  { department: "이비인후과", term: "tonsillitis", count: 6 },
+  { department: "이비인후과", term: "otitis", count: 4 },
+  { department: "일반내과", term: "hypertension", count: 8 },
+  { department: "일반내과", term: "fever", count: 8 },
+  { department: "일반내과", term: "dizziness", count: 6 }
 ];
 const SYNTHETIC_WARD_LAYOUT = [
-  { ward: "ICU", roomPrefix: "ICU", roomBase: 1, roomDigits: 2, doctorTeam: "Synthetic Critical Care Team" },
+  { ward: "내과계중환자실", roomPrefix: "MICU", roomBase: 1, roomDigits: 2, doctorTeam: "Synthetic Medical Critical Care Team" },
+  { ward: "외과계중환자실", roomPrefix: "SICU", roomBase: 21, roomDigits: 2, doctorTeam: "Synthetic Surgical Critical Care Team" },
   { ward: "N병동", roomPrefix: "N", roomBase: 301, roomDigits: 3, doctorTeam: "Synthetic Neuro Team" },
   { ward: "S병동", roomPrefix: "S", roomBase: 401, roomDigits: 3, doctorTeam: "Synthetic Surgical Team" },
   { ward: "내과병동", roomPrefix: "M", roomBase: 501, roomDigits: 3, doctorTeam: "Synthetic Medical Team" },
@@ -71,7 +80,8 @@ const DEPARTMENT_PRIORITY_ORDER = [
   "이비인후과",
   "일반내과"
 ];
-const ICU_DIAGNOSIS_PATTERN = /shock|sepsis|respiratory failure|ventilator|ecmo|intubation|cardiac arrest|hemodynamic|critical|status epilepticus|unstable/i;
+const MEDICAL_ICU_PATTERN = /shock|sepsis|septic|respiratory failure|ards|ventilator|ecmo|intubation|cardiac arrest|hemodynamic|critical|status epilepticus|unstable|copd exacerbation|asthma exacerbation|pneumonia|heart failure|arrhythmia|aki|dialysis|dka|hhs|gi bleed/i;
+const SURGICAL_ICU_PATTERN = /postop|post-op|postoperative|trauma|hemorrhage|bleeding|perforation|peritonitis|bowel obstruction|ischemia|appendicitis|laparotomy|thoracotomy|pancreatectomy|colectomy|anastomotic|wound dehiscence|surgery/i;
 const DEPARTMENT_WARD_MAP = new Map([
   ["신경과", "N병동"],
   ["외과", "S병동"],
@@ -87,10 +97,11 @@ const DEPARTMENT_WARD_MAP = new Map([
   ["일반내과", "내과병동"]
 ]);
 const WARD_TARGET_RATIO = {
-  ICU: 0.14,
-  N병동: 0.2,
-  S병동: 0.2,
-  내과병동: 0.34,
+  내과계중환자실: 0.16,
+  외과계중환자실: 0.12,
+  N병동: 0.16,
+  S병동: 0.16,
+  내과병동: 0.28,
   재활병동: 0.12
 };
 
@@ -153,7 +164,7 @@ async function fetchPatientListPage(options = {}) {
     cursor,
     targetCount: poolTargetCount
   });
-  const profiles = await buildPatientListProfiles(candidatePool.resources);
+  const profiles = await buildPatientListProfiles(candidatePool.resources, candidatePool.seedHints);
   const patients = selectBalancedPatientProfiles(profiles, count);
 
   return {
@@ -170,12 +181,13 @@ async function fetchPatientListPage(options = {}) {
 function normalizePatientCount(value) {
   const parsed = Number.parseInt(String(value || DEFAULT_PATIENT_COUNT), 10);
   if (!Number.isFinite(parsed)) return DEFAULT_PATIENT_COUNT;
-  return Math.max(1, Math.min(parsed, 50));
+  return Math.max(1, Math.min(parsed, MAX_PATIENT_COUNT));
 }
 
 async function fetchPatientCandidatePool(options = {}) {
   const targetCount = Math.max(1, Number.parseInt(String(options.targetCount || BALANCED_POOL_MIN), 10) || BALANCED_POOL_MIN);
-  const seededResources = await fetchDepartmentSeedPatientResources(targetCount);
+  const seeded = await fetchDepartmentSeedPatientResources(targetCount);
+  const seededResources = seeded.resources;
   const seenIds = new Set(seededResources.map((resource) => String(resource?.id || "")).filter(Boolean));
   let nextPath = typeof options.cursor === "string" && options.cursor
     ? decodePatientCursor(options.cursor)
@@ -212,7 +224,8 @@ async function fetchPatientCandidatePool(options = {}) {
 
   return {
     resources: mergeUniqueResources([...seededResources, ...pagedResources]).slice(0, targetCount),
-    nextPath: finalNextPath
+    nextPath: finalNextPath,
+    seedHints: seeded.seedHints
   };
 }
 
@@ -237,28 +250,72 @@ function interleaveCandidatePages(pages, targetCount) {
 
 async function fetchDepartmentSeedPatientResources(targetCount) {
   const seedGroups = new Map();
+  const seedHints = new Map();
   const selectedIds = [];
   const selectedIdSet = new Set();
 
-  for (const search of DEPARTMENT_SEED_SEARCHES) {
+  const seedResults = await mapInBatches(DEPARTMENT_SEED_SEARCHES, 6, async (search) => {
     const conditions = await safeFetchResources(
-      `/Condition?code:text=${encodeURIComponent(search.term)}&_count=${search.count}&_elements=subject,code`
+      `/Condition?code:text=${encodeURIComponent(search.term)}&_count=${search.count}&_elements=id,subject,code,recordedDate,onsetDateTime`
     );
-    const patientIds = unique(
-      conditions
-        .map((condition) => extractReferenceId(condition?.subject?.reference))
-        .filter(Boolean)
-    );
+    return { search, conditions };
+  });
+
+  seedResults.forEach(({ search, conditions }) => {
     const existingIds = seedGroups.get(search.department) || [];
-    seedGroups.set(search.department, unique([...existingIds, ...patientIds]));
-  }
+    const nextIds = [];
+
+    conditions.forEach((condition) => {
+      const patientId = extractReferenceId(condition?.subject?.reference);
+      if (!patientId) return;
+      nextIds.push(patientId);
+
+      const hint = seedHints.get(patientId) || {
+        department: search.department,
+        diagnosisList: []
+      };
+
+      const label = conditionLabel(condition);
+      if (label) {
+        hint.diagnosisList = unique([...hint.diagnosisList, label]).slice(0, 6);
+      }
+
+      if (getDepartmentSortIndex(search.department) < getDepartmentSortIndex(hint.department)) {
+        hint.department = search.department;
+      }
+
+      seedHints.set(patientId, hint);
+    });
+
+    seedGroups.set(search.department, unique([...existingIds, ...nextIds]));
+  });
+
+  const baseQuota = Math.min(
+    DEPARTMENT_MIN_PATIENT_COUNT,
+    Math.max(1, Math.floor(targetCount / Math.max(1, DEPARTMENT_PRIORITY_ORDER.length)))
+  );
+
+  DEPARTMENT_PRIORITY_ORDER.forEach((department) => {
+    const group = (seedGroups.get(department) || []).slice();
+    let selectedForDepartment = 0;
+
+    while (group.length && selectedIds.length < targetCount && selectedForDepartment < baseQuota) {
+      const nextId = String(group.shift() || "").trim();
+      if (!nextId || selectedIdSet.has(nextId)) continue;
+      selectedIds.push(nextId);
+      selectedIdSet.add(nextId);
+      selectedForDepartment += 1;
+    }
+
+    seedGroups.set(department, group);
+  });
 
   while (selectedIds.length < targetCount) {
     let addedInRound = 0;
 
-    DEPARTMENT_SEED_SEARCHES.forEach((search) => {
+    DEPARTMENT_PRIORITY_ORDER.forEach((department) => {
       if (selectedIds.length >= targetCount) return;
-      const group = seedGroups.get(search.department) || [];
+      const group = seedGroups.get(department) || [];
       while (group.length) {
         const nextId = String(group.shift() || "").trim();
         if (!nextId || selectedIdSet.has(nextId)) continue;
@@ -272,7 +329,10 @@ async function fetchDepartmentSeedPatientResources(targetCount) {
     if (!addedInRound) break;
   }
 
-  return fetchPatientResourcesByIds(selectedIds);
+  return {
+    resources: await fetchPatientResourcesByIds(selectedIds),
+    seedHints
+  };
 }
 
 async function fetchPatientResourcesByIds(ids) {
@@ -316,14 +376,14 @@ function mergeUniqueResources(resources) {
   return merged;
 }
 
-async function buildPatientListProfiles(resources) {
-  return mapInBatches(resources || [], 8, async (resource, index) => {
+async function buildPatientListProfiles(resources, seedHints = new Map()) {
+  return mapInBatches(resources || [], 12, async (resource, index) => {
     const summary = normalizePatientSummary(resource, index);
     if (!summary) return null;
 
-    const conditions = await safeFetchResources(`/Condition?patient=${encodeURIComponent(resource.id)}&_count=12`);
-    const diagnosisList = unique(sortDesc(conditions, conditionDate).map(conditionLabel)).slice(0, 4);
-    const department = inferClinicalDepartment(diagnosisList);
+    const seedHint = seedHints.get(String(resource.id)) || null;
+    const diagnosisList = unique(seedHint?.diagnosisList || []).slice(0, 4);
+    const department = seedHint?.department || inferClinicalDepartment(diagnosisList);
     const wardAssignment = buildSyntheticWardAssignment(resource.id, index + 1, {
       department,
       diagnosisList
@@ -359,77 +419,51 @@ async function mapInBatches(items, batchSize, mapper) {
 
 function selectBalancedPatientProfiles(profiles, count) {
   const candidates = (profiles || []).filter(Boolean);
-  const usableProfiles = candidates.filter((profile) => Number(profile?.sourceDiagnosisCount || 0) > 0);
-  const reserveProfiles = candidates.filter((profile) => Number(profile?.sourceDiagnosisCount || 0) <= 0);
-  const wardTargets = buildWardSelectionTargets(count);
-  const departmentCaps = buildDepartmentSelectionCaps(candidates, count);
   const selected = [];
   const selectedIds = new Set();
-  const selectedWardCounts = new Map();
-  const selectedDepartmentCounts = new Map();
-  const wardGroups = buildWardProfileGroups(usableProfiles);
+  const departmentGroups = new Map();
 
-  while (selected.length < count) {
-    let addedInRound = 0;
-
-    WARD_DISPLAY_ORDER.forEach((ward) => {
-      if (selected.length >= count) return;
-      const target = wardTargets.get(ward) || 0;
-      if ((selectedWardCounts.get(ward) || 0) >= target) return;
-
-      const nextPatient = takeNextSelectableProfile(
-        wardGroups.get(ward),
-        selectedDepartmentCounts,
-        departmentCaps,
-        false
-      );
-      if (!nextPatient) return;
-
-      registerSelectedProfile(nextPatient, selected, selectedIds, selectedWardCounts, selectedDepartmentCounts);
-      addedInRound += 1;
-    });
-
-    if (!addedInRound) break;
-  }
-
-  if (selected.length < count) {
-    WARD_DISPLAY_ORDER.forEach((ward) => {
-      while (selected.length < count) {
-        const nextPatient = takeNextSelectableProfile(
-          wardGroups.get(ward),
-          selectedDepartmentCounts,
-          departmentCaps,
-          false
-        );
-        if (!nextPatient) break;
-        registerSelectedProfile(nextPatient, selected, selectedIds, selectedWardCounts, selectedDepartmentCounts);
+  DEPARTMENT_PRIORITY_ORDER.forEach((department) => departmentGroups.set(department, []));
+  candidates
+    .slice()
+    .sort(compareClinicalProfiles)
+    .forEach((profile) => {
+      const department = String(profile?.department || "일반내과").trim() || "일반내과";
+      if (!departmentGroups.has(department)) {
+        departmentGroups.set(department, []);
       }
+      departmentGroups.get(department).push(profile);
     });
-  }
 
-  if (selected.length < count) {
-    WARD_DISPLAY_ORDER.forEach((ward) => {
-      while (selected.length < count) {
-        const nextPatient = takeNextSelectableProfile(
-          wardGroups.get(ward),
-          selectedDepartmentCounts,
-          departmentCaps,
-          true
-        );
-        if (!nextPatient) break;
-        registerSelectedProfile(nextPatient, selected, selectedIds, selectedWardCounts, selectedDepartmentCounts);
-      }
+  const guaranteedPerDepartment = count >= TARGET_PATIENT_LIST_COUNT
+    ? DEPARTMENT_MIN_PATIENT_COUNT
+    : Math.max(1, Math.floor(count / Math.max(1, DEPARTMENT_PRIORITY_ORDER.length)));
+
+  DEPARTMENT_PRIORITY_ORDER.forEach((department) => {
+    const group = departmentGroups.get(department) || [];
+    let picked = 0;
+
+    while (group.length && selected.length < count && picked < guaranteedPerDepartment) {
+      const profile = group.shift();
+      if (!profile || selectedIds.has(String(profile.id))) continue;
+      selected.push(profile);
+      selectedIds.add(String(profile.id));
+      picked += 1;
+    }
+  });
+
+  const leftovers = [];
+  departmentGroups.forEach((group) => {
+    leftovers.push(...group);
+  });
+
+  leftovers
+    .sort(compareClinicalProfiles)
+    .forEach((profile) => {
+      if (!profile || selected.length >= count || selectedIds.has(String(profile.id))) return;
+      selected.push(profile);
+      selectedIds.add(String(profile.id));
     });
-  }
-
-  if (selected.length < count) {
-    reserveProfiles
-      .sort(compareClinicalProfiles)
-      .forEach((profile) => {
-        if (selected.length >= count || selectedIds.has(String(profile.id))) return;
-        registerSelectedProfile(profile, selected, selectedIds, selectedWardCounts, selectedDepartmentCounts);
-      });
-  }
 
   return selected.slice(0, count);
 }
@@ -444,7 +478,9 @@ function buildClinicalQualityScore(input = {}) {
   let score = Math.min(4, diagnosisList.length) * 10;
   if (department && department !== "일반내과") score += 8;
   if (department === "이비인후과") score -= 4;
-  if (diagnosisList.some((item) => ICU_DIAGNOSIS_PATTERN.test(String(item || "")))) score += 12;
+  if (diagnosisList.some((item) => MEDICAL_ICU_PATTERN.test(String(item || "")) || SURGICAL_ICU_PATTERN.test(String(item || "")))) {
+    score += 12;
+  }
   return score;
 }
 
@@ -733,6 +769,8 @@ function normalizePatientDetail(data) {
   const dailyData = buildDailyData({
     dates: timelineDates,
     dateMap,
+    ward: wardAssignment.ward,
+    department,
     diagnosisList,
     pastHistory,
     allergyList,
@@ -1277,6 +1315,119 @@ function buildNursingTasks(lineTube, carePlans, documents) {
   documents.slice(0, 2).forEach((item) => tasks.push({ text: "문서 기록 확인", detail: documentTitle(item) }));
 
   return tasks.slice(0, 6);
+}
+
+function buildCriticalCareProfile(input = {}) {
+  const ward = String(input.ward || "").trim();
+  if (!isCriticalCareWard(ward)) return null;
+
+  const diagnosisText = normalizeClinicalText((input.diagnosisList || []).join(" / "));
+  const vitalText = `${input.vital?.bp || ""} ${input.vital?.spo2 || ""} ${input.vital?.rr || ""}`;
+  const procedureText = normalizeClinicalText((input.procedures || []).map((item) => procedureLabel(item)).join(" / "));
+  const respiratoryFailure = /respiratory failure|ards|intubation|ventilator|ecmo|pneumonia/.test(diagnosisText);
+  const shockOrInstability = /shock|sepsis|septic|cardiac arrest|unstable|hemodynamic|gi bleed/.test(diagnosisText) || /8\d\/|9\d\//.test(vitalText);
+  const postoperative = /postop|post-op|postoperative|laparotomy|thoracotomy|colectomy|appendectomy|trauma|hemorrhage|bleeding/.test(`${diagnosisText} ${procedureText}`);
+
+  const lines = [];
+  const tubes = [];
+  const vent = [];
+  const tasks = [
+    { text: "중환자실 집중관찰", detail: "의식, 활력징후, 혈역학 상태를 집중 감시함" },
+    { text: "침습적 라인 감시", detail: "라인 고정, 삽입부위, 감염 징후를 사정함" }
+  ];
+  const events = [
+    { time: "06:00", note: "중환자실 회진 전 활력징후 및 혈역학 상태 재평가함", nurseOffset: 0 },
+    { time: "12:00", note: "라인·튜브 위치와 고정 상태 재확인하고 감염 징후 관찰함", nurseOffset: 1 },
+    { time: "18:00", note: "교대 전 중환자실 집중 감시 항목 재점검함", nurseOffset: 2 }
+  ];
+  const planItems = [];
+
+  if (ward === "내과계중환자실") {
+    lines.push({ text: "중심정맥관", detail: "혈역학 감시 및 고위험 약물 투여" });
+    if (shockOrInstability) {
+      lines.push({ text: "동맥관", detail: "침습적 혈압 모니터링" });
+      tasks.push({ text: "혈압/관류 상태 확인", detail: "저혈압 및 말초관류 저하 여부를 반복 사정함" });
+      planItems.push("혈역학 불안정 여부 재평가");
+      events.push({ time: "09:00", note: "혈압 추세 확인하며 혈역학적 불안정 소견 여부를 보고함", nurseOffset: 3 });
+    }
+    if (respiratoryFailure) {
+      tubes.push({ text: "기관내삽관 튜브", detail: "기계환기 유지 중" });
+      vent.push({ text: "기계환기", detail: "산소화 및 호흡 상태 집중 감시" });
+      tasks.push({ text: "호흡기 관리", detail: "기도 분비물, 산소화, 환기 상태를 지속 관찰함" });
+      planItems.push("산소화·환기 지표 추적");
+      events.push({ time: "15:00", note: "호흡기 설정과 산소화 반응을 확인하고 흡인 필요 여부를 사정함", nurseOffset: 4 });
+    }
+  }
+
+  if (ward === "외과계중환자실") {
+    lines.push({ text: "동맥관", detail: "수술 후 침습적 혈압 모니터링" });
+    lines.push({ text: "중심정맥관", detail: "수액/고위험 약물 및 중심정맥 접근 유지" });
+    tasks.push({ text: "수술부위 확인", detail: "출혈, 배액 양상, 드레싱 상태를 사정함" });
+    planItems.push("수술 후 출혈 및 배액 변화 추적");
+    events.push({ time: "08:00", note: "수술부위 드레싱과 배액 양상을 확인하고 출혈 여부 사정함", nurseOffset: 3 });
+
+    if (postoperative) {
+      tubes.push({ text: "배액관", detail: "수술 후 배액량 및 색 변화 관찰" });
+      events.push({ time: "14:00", note: "배액량 및 복부/상처 통증 변화를 확인함", nurseOffset: 4 });
+    }
+
+    if (respiratoryFailure) {
+      vent.push({ text: "기계환기", detail: "수술 후 호흡 보조 유지" });
+      tasks.push({ text: "호흡기 관리", detail: "기도 확보 및 산소화 상태를 지속 관찰함" });
+    }
+  }
+
+  return {
+    lines,
+    tubes,
+    vent,
+    tasks,
+    events,
+    planItems
+  };
+}
+
+function isCriticalCareWard(ward) {
+  return ward === "내과계중환자실" || ward === "외과계중환자실";
+}
+
+function mergeCriticalCareLineTube(lineTube, profile) {
+  if (!lineTube || !profile) return;
+  lineTube.lines = dedupeItems([...(lineTube.lines || []), ...(profile.lines || [])]);
+  lineTube.tubes = dedupeItems([...(lineTube.tubes || []), ...(profile.tubes || [])]);
+  lineTube.vent = dedupeItems([...(lineTube.vent || []), ...(profile.vent || [])]);
+}
+
+function mergeCriticalCareTasks(tasks, profile) {
+  if (!Array.isArray(tasks) || !profile) return;
+  const merged = [...(profile.tasks || []), ...tasks];
+  const seen = new Set();
+  tasks.length = 0;
+  merged.forEach((item) => {
+    const key = `${item?.text || ""}|${item?.detail || ""}`;
+    if (!item?.text || seen.has(key)) return;
+    seen.add(key);
+    tasks.push(item);
+  });
+}
+
+function mergeCriticalCareEvents(events, profile) {
+  if (!Array.isArray(events) || !profile) return;
+  const additions = (profile.events || []).map((item, index) => ({
+    time: item.time,
+    nurse: fallbackNurseName(index + 6),
+    note: item.note,
+    event: ""
+  }));
+  events.push(...additions);
+  events.sort((left, right) => String(left.time || "").localeCompare(String(right.time || "")));
+}
+
+function mergeCriticalCarePlanItems(items, profile) {
+  if (!Array.isArray(items) || !profile) return;
+  const merged = unique([...(profile.planItems || []), ...items]);
+  items.length = 0;
+  items.push(...merged);
 }
 
 function buildPlanItems(diagnosisList, carePlans, serviceRequests) {
@@ -1942,13 +2093,31 @@ function buildSyntheticWardAssignment(id, fallbackIndex = 0, options = {}) {
 }
 
 function inferWardFromClinicalContext(department, diagnosisText, numericCode) {
-  if (ICU_DIAGNOSIS_PATTERN.test(diagnosisText || "")) return "ICU";
+  const safeDepartment = String(department || "").trim();
+  const diagnosisSource = String(diagnosisText || "");
+  const isSurgicalDepartment = safeDepartment === "외과" || safeDepartment === "종양내과";
 
-  const mappedWard = DEPARTMENT_WARD_MAP.get(String(department || "").trim());
+  if (SURGICAL_ICU_PATTERN.test(diagnosisSource) && (isSurgicalDepartment || /trauma|hemorrhage|bleeding|postop|post-op|postoperative/.test(diagnosisSource))) {
+    return "외과계중환자실";
+  }
+
+  if (MEDICAL_ICU_PATTERN.test(diagnosisSource)) {
+    return isSurgicalDepartment && !/sepsis|shock|respiratory failure|pneumonia|heart failure|arrhythmia|aki|dialysis/.test(diagnosisSource)
+      ? "외과계중환자실"
+      : "내과계중환자실";
+  }
+
+  const mappedWard = DEPARTMENT_WARD_MAP.get(safeDepartment);
   if (mappedWard === "내과병동") {
-    const shouldEscalateToIcu = ["감염내과", "호흡기내과", "순환기내과"].includes(String(department || "").trim())
+    const shouldEscalateToIcu = ["감염내과", "호흡기내과", "순환기내과", "소화기내과", "신장비뇨의학과"].includes(safeDepartment)
       && numericCode % 9 === 0;
-    if (shouldEscalateToIcu) return "ICU";
+    if (shouldEscalateToIcu) return "내과계중환자실";
+  }
+
+  if (mappedWard === "S병동") {
+    const shouldEscalateToIcu = ["외과", "종양내과"].includes(safeDepartment)
+      && numericCode % 7 === 0;
+    if (shouldEscalateToIcu) return "외과계중환자실";
   }
 
   return mappedWard || "내과병동";
@@ -2157,6 +2326,19 @@ function buildDailyData(input) {
       ...(orderEvents[date] || [])
     ].sort((a, b) => String(a.time || "").localeCompare(String(b.time || "")));
 
+    const criticalCareProfile = buildCriticalCareProfile({
+      ward: input.ward,
+      department: input.department,
+      diagnosisList: dailyDiagnosisList.length ? dailyDiagnosisList : input.diagnosisList,
+      procedures: dailyProcedures,
+      vital: dayVital
+    });
+
+    mergeCriticalCareLineTube(dailyLineTube, criticalCareProfile);
+    mergeCriticalCareTasks(dailyNursingTasks, criticalCareProfile);
+    mergeCriticalCareEvents(eventNotes, criticalCareProfile, date);
+    mergeCriticalCarePlanItems(dailyPlanItems, criticalCareProfile);
+
     dayMap[date] = {
       pastHistory: input.pastHistory.slice(0, 8),
       nursingProblem: buildNursingProblemText(
@@ -2165,11 +2347,11 @@ function buildDailyData(input) {
         dailyCarePlans
       ),
       handover: {
-        lines: input.lineTube.lines,
-        tubes: input.lineTube.tubes,
-        drains: input.lineTube.drains,
+        lines: dailyLineTube.lines,
+        tubes: dailyLineTube.tubes,
+        drains: dailyLineTube.drains,
         drugs: dailyMedicationOrders.running,
-        vent: input.lineTube.vent,
+        vent: dailyLineTube.vent,
         neuro: buildNeuroItems(dailyDiagnosisList.length ? dailyDiagnosisList : input.diagnosisList, dailyCarePlans),
         etc: input.allergyList.slice(0, 2).map((text) => ({ text, detail: "알레르기 / 주의" }))
       },

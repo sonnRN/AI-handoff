@@ -35,18 +35,23 @@ function assertPatientForEmr(patient, label) {
 
 async function main() {
   const localPatients = loadLocalDemoPatients();
-  assert.strictEqual(localPatients.length, 50, "Local synthetic patient list must contain 50 patients");
+  assert.strictEqual(localPatients.length, 60, "Local synthetic patient list must contain 60 patients");
 
-  const { handler, patients } = await fetchPatientList({ count: 50 });
-  assert.strictEqual(patients.length, 50, "External or fallback patient list must return 50 patients");
+  const { handler, patients, fallback, source } = await fetchPatientList({ count: 60 });
+  assert.strictEqual(patients.length, 60, "External or fallback patient list must return 60 patients");
   assert(patients.every((patient) => patient.ward && patient.ward !== "ER"), "Patient summaries must include non-ER ward labels");
 
   const wardSet = new Set(patients.map((patient) => patient.ward));
   const departmentSet = new Set(patients.map((patient) => patient.department));
-  assert(wardSet.has("ICU"), "Patient list must include ICU patients");
+  assert(wardSet.has("내과계중환자실"), "Patient list must include medical ICU patients");
+  assert(wardSet.has("외과계중환자실"), "Patient list must include surgical ICU patients");
   assert(wardSet.has("N병동"), "Patient list must include N병동 patients");
-  assert(wardSet.size >= 5, "Patient list must be distributed across at least five wards");
-  assert(departmentSet.size >= 4, "Patient list must be distributed across at least four departments");
+  assert(wardSet.size >= 6, "Patient list must be distributed across at least six wards");
+  if (!fallback && source !== "local-demo-fallback") {
+    assert(departmentSet.size >= 10, "FHIR patient list must be distributed across at least ten departments");
+  } else {
+    assert(departmentSet.size >= 4, "Fallback patient list must remain distributed across at least four departments");
+  }
 
   const firstPatient = JSON.parse((await handler({ queryStringParameters: { id: String(patients[0].id) } })).body);
   const lastPatient = JSON.parse((await handler({ queryStringParameters: { id: String(patients[patients.length - 1].id) } })).body);
@@ -54,7 +59,7 @@ async function main() {
   assertPatientForEmr(firstPatient, "first patient");
   assertPatientForEmr(lastPatient, "last patient");
 
-  console.log("EMR patient list 50 smoke test passed.");
+  console.log("EMR patient list 60 smoke test passed.");
   console.log(`List source count: ${patients.length}`);
   console.log(`Ward groups: ${Array.from(wardSet).sort().join(", ")}`);
   console.log(`Departments: ${Array.from(departmentSet).sort().join(", ")}`);

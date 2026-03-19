@@ -32,7 +32,7 @@ async function main() {
       return jsonResponse({
         id: query.id,
         name: "FHIR Test Patient",
-        ward: "ICU",
+        ward: "내과계중환자실",
         department: "감염내과",
         dailyData: {
           "2026-03-17": {}
@@ -50,7 +50,7 @@ async function main() {
         {
           id: "remote-1",
           name: "FHIR Test Patient",
-          ward: "ICU",
+          ward: "내과계중환자실",
           department: "감염내과"
         }
       ],

@@ -11,7 +11,7 @@ const {
 const DEFAULT_LIST_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_DETAIL_TTL_MS = 30 * 60 * 1000;
 const DEFAULT_CACHE_DIR = getDefaultCacheDir();
-const CACHE_SCHEMA_VERSION = "20260317-ward-department-v1";
+const CACHE_SCHEMA_VERSION = "20260319-icu-split-v2";
 
 let sharedGateway = null;
 
@@ -35,7 +35,7 @@ function parseHandlerPayload(response) {
 function normalizeCount(value, fallback) {
   const parsed = Number.parseInt(String(value || fallback || 8), 10);
   if (!Number.isFinite(parsed)) return fallback || 8;
-  return Math.max(1, Math.min(parsed, 50));
+  return Math.max(1, Math.min(parsed, 80));
 }
 
 function ensureDir(directory) {
@@ -193,7 +193,9 @@ function createPatientDataGateway(options = {}) {
         cachedAt: new Date(now()).toISOString()
       });
       writeCache(cachePath, enriched);
-      await warmDetailCache(payload.patients || [], source);
+      Promise.resolve()
+        .then(() => warmDetailCache((payload.patients || []).slice(0, 12), source))
+        .catch(() => {});
       return enriched;
     } catch (remoteError) {
       if (cached) {

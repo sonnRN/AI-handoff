@@ -72,7 +72,7 @@ function getSyntheaDataDir() {
 function normalizeCount(value, fallback) {
   const parsed = Number.parseInt(String(value || fallback || 8), 10);
   if (!Number.isFinite(parsed)) return fallback || 8;
-  return Math.max(1, Math.min(parsed, 50));
+  return Math.max(1, Math.min(parsed, 80));
 }
 
 function encodeCursor(offset) {
