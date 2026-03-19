@@ -13,7 +13,9 @@ body {
   font-size: 14px;
   background: #d4d0c8;
   color: #000;
+  height: 100vh;
   min-height: 100vh;
+  max-height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -236,8 +238,9 @@ body {
 /* ===== 메인 컨테이너 ===== */
 .main-container {
   display: flex;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
+  overflow: hidden;
 }
 
 /* ===== 환자 리스트 ===== */
@@ -249,6 +252,7 @@ body {
   flex-direction: column;
   min-height: 0;
   flex-shrink: 0;
+  overflow: hidden;
 }
 
 .list-header {
@@ -261,8 +265,10 @@ body {
 }
 
 .list-body {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .pt-ward-group {
@@ -416,6 +422,7 @@ textarea {
   background: #c0c0c0;
   gap: 1px;
   min-height: 0;
+  min-width: 0;
 }
 
 .column {
