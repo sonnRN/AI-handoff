@@ -13,6 +13,7 @@ const patientDetailCache = new Map();
 let uiInitialized = false;
 const KOREA_TIMEZONE = 'Asia/Seoul';
 const PATIENT_LIST_COUNT = 60;
+const PATIENT_LIST_PAGE_SIZE = 20;
 const WARD_DISPLAY_ORDER = ['내과계중환자실', '외과계중환자실', 'N병동', 'S병동', '내과병동', '재활병동'];
 
 function unique(items) {
@@ -64,15 +65,7 @@ async function loadPatientStore() {
 
     for (const endpoint of endpoints) {
       try {
-        const requestUrl = endpoint.url.includes('?')
-          ? `${endpoint.url}&count=${PATIENT_LIST_COUNT}`
-          : `${endpoint.url}?count=${PATIENT_LIST_COUNT}`;
-        const response = await fetch(requestUrl);
-        if (!response.ok) throw new Error(`External patient list failed: ${response.status}`);
-
-        const payload = await response.json();
-        if (!payload.patients || !payload.patients.length) throw new Error('No external patients returned');
-
+        const payload = await fetchPatientListPayload(endpoint);
         patientStore = payload.patients;
         usingExternalData = true;
         externalApiBase = endpoint.url;
@@ -93,6 +86,64 @@ async function loadPatientStore() {
     externalDataSourceLabel = '합성 FHIR MCP 연결 실패';
     patientLoadError = error.message || 'MCP patient load failed';
   }
+}
+
+async function fetchPatientListPayload(endpoint) {
+  let cursor = '';
+  let lastPayload = null;
+  let aggregatedPatients = [];
+
+  while (aggregatedPatients.length < PATIENT_LIST_COUNT) {
+    const pageCount = Math.min(PATIENT_LIST_PAGE_SIZE, PATIENT_LIST_COUNT - aggregatedPatients.length);
+    const requestUrl = buildPatientPageUrl(endpoint.url, pageCount, cursor);
+    const response = await fetch(requestUrl);
+    if (!response.ok) throw new Error(`External patient list failed: ${response.status}`);
+
+    const payload = await response.json();
+    if (!payload.patients || !payload.patients.length) {
+      if (!aggregatedPatients.length) {
+        throw new Error('No external patients returned');
+      }
+      break;
+    }
+
+    preloadPatientDetailCache(payload);
+    aggregatedPatients = mergePatientSummaries(aggregatedPatients, payload.patients);
+    lastPayload = payload;
+    cursor = String(payload?.pageInfo?.nextCursor || '').trim();
+    if (!payload?.pageInfo?.hasNext || !cursor) break;
+  }
+
+  if (!lastPayload) {
+    throw new Error('No external patients returned');
+  }
+
+  return {
+    ...lastPayload,
+    patients: aggregatedPatients
+  };
+}
+
+function buildPatientPageUrl(baseUrl, count, cursor) {
+  const query = [`count=${encodeURIComponent(String(count))}`];
+  if (cursor) query.push(`cursor=${encodeURIComponent(cursor)}`);
+  return baseUrl.includes('?')
+    ? `${baseUrl}&${query.join('&')}`
+    : `${baseUrl}?${query.join('&')}`;
+}
+
+function mergePatientSummaries(existing, incoming) {
+  const merged = [];
+  const seen = new Set();
+
+  [...(existing || []), ...(incoming || [])].forEach((patient) => {
+    const id = String(patient?.id || '').trim();
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    merged.push(patient);
+  });
+
+  return merged;
 }
 
 async function ensurePatientStoreLoaded() {
