@@ -1,13 +1,30 @@
 const http = require("http");
+const fs = require("fs");
+const path = require("path");
 const { URL } = require("url");
 const { handler: patientsHandler } = require("./handlers/patientsApi");
 const { handler: patientsMcpHandler } = require("./handlers/patientsMcpApi");
+const { handler: simulationHandler } = require("./handlers/simulationApi");
 const { BUILD_INFO } = require("./buildInfo");
+
+const STATIC_ROOT = path.resolve(__dirname, "..", "..");
+const MIME_TYPES = {
+  ".css": "text/css; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".txt": "text/plain; charset=utf-8",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2"
+};
 
 function buildCorsHeaders() {
   return {
     "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,OPTIONS",
+    "access-control-allow-methods": "GET,POST,OPTIONS",
     "access-control-allow-headers": "content-type",
     "access-control-max-age": "86400"
   };
@@ -27,9 +44,42 @@ function parseQuery(url) {
   return Object.fromEntries(url.searchParams.entries());
 }
 
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
+function resolveStaticFile(pathname) {
+  const safePath = pathname === "/" ? "/index.html" : pathname;
+  const normalized = path.normalize(safePath).replace(/^(\.\.[\\/])+/, "");
+  const absolutePath = path.resolve(STATIC_ROOT, `.${normalized}`);
+  if (!absolutePath.startsWith(STATIC_ROOT)) return null;
+  return absolutePath;
+}
+
+function serveStaticFile(res, pathname) {
+  const absolutePath = resolveStaticFile(pathname);
+  if (!absolutePath || !fs.existsSync(absolutePath) || fs.statSync(absolutePath).isDirectory()) {
+    return false;
+  }
+
+  const extension = path.extname(absolutePath).toLowerCase();
+  const contentType = MIME_TYPES[extension] || "application/octet-stream";
+  res.writeHead(200, {
+    "content-type": contentType
+  });
+  fs.createReadStream(absolutePath).pipe(res);
+  return true;
+}
+
 function createHttpServer(options = {}) {
   const routePatients = options.patientsHandler || patientsHandler;
   const routePatientsMcp = options.patientsMcpHandler || patientsMcpHandler;
+  const routeSimulation = options.simulationHandler || simulationHandler;
 
   return http.createServer(async (req, res) => {
     const method = String(req.method || "GET").toUpperCase();
@@ -38,13 +88,6 @@ function createHttpServer(options = {}) {
     if (method === "OPTIONS") {
       res.writeHead(204, buildCorsHeaders());
       res.end();
-      return;
-    }
-
-    if (method !== "GET") {
-      sendJson(res, 405, {
-        error: "Method not allowed"
-      });
       return;
     }
 
@@ -73,14 +116,38 @@ function createHttpServer(options = {}) {
 
     try {
       if (url.pathname === "/api/patients") {
+        if (method !== "GET") {
+          sendJson(res, 405, { error: "Method not allowed" });
+          return;
+        }
         const response = await routePatients({ queryStringParameters });
         sendJson(res, response.statusCode || 200, response.body || "{}", response.headers || {});
         return;
       }
 
       if (url.pathname === "/api/patients-mcp") {
+        if (method !== "GET") {
+          sendJson(res, 405, { error: "Method not allowed" });
+          return;
+        }
         const response = await routePatientsMcp({ queryStringParameters });
         sendJson(res, response.statusCode || 200, response.body || "{}", response.headers || {});
+        return;
+      }
+
+      if (url.pathname === "/api/simulation") {
+        const body = method === "POST" ? await readBody(req) : "";
+        const response = await routeSimulation({
+          httpMethod: method,
+          queryStringParameters,
+          headers: req.headers || {},
+          body
+        });
+        sendJson(res, response.statusCode || 200, response.body || "{}", response.headers || {});
+        return;
+      }
+
+      if (method === "GET" && serveStaticFile(res, url.pathname)) {
         return;
       }
 

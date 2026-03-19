@@ -57,6 +57,11 @@ async function main() {
   });
 
   try {
+    const appShell = await fetch(`http://127.0.0.1:${port}/`);
+    assert.strictEqual(appShell.status, 200);
+    const shellHtml = await appShell.text();
+    assert.ok(shellHtml.includes("Nursing Handoff Simulation"));
+
     const health = await fetch(`http://127.0.0.1:${port}/health`);
     assert.strictEqual(health.status, 200);
     const healthJson = await health.json();

@@ -4,6 +4,7 @@ const path = require("path");
 const ROOT = path.resolve(__dirname, "..");
 const tests = [
   { label: "http server smoke", command: ["node", "tests/http-server-smoke.js"] },
+  { label: "simulation api smoke", command: ["node", "tests/simulation-api-smoke.js"] },
   { label: "vercel adapter smoke", command: ["node", "tests/vercel-adapter-smoke.js"] },
   { label: "mcp runtime wiring", command: ["node", "tests/mcp-runtime-wiring-smoke.js"] },
   { label: "mcp gateway regression", command: ["node", "tests/mcp-gateway-regression.js"] },
