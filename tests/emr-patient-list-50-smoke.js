@@ -20,6 +20,16 @@ const REQUIRED_HEADER_FIELDS = [
   "dailyData"
 ];
 
+const EXPECTED_WARDS = [
+  "내과계중환자실",
+  "외과계중환자실",
+  "신경과병동",
+  "외과병동",
+  "호흡기내과병동",
+  "소화기내과병동",
+  "신장내과병동"
+];
+
 function assertPatientForEmr(patient, label) {
   for (const field of REQUIRED_HEADER_FIELDS) {
     assert(patient[field] || patient[field] === 0, `${label}: missing ${field}`);
@@ -44,13 +54,11 @@ async function main() {
   const wardSet = new Set(patients.map((patient) => patient.ward));
   const departmentSet = new Set(patients.map((patient) => patient.department));
   if (!fallback && source !== "local-demo-fallback") {
-    assert(wardSet.has("내과계중환자실"), "Patient list must include medical ICU patients");
-    assert(wardSet.has("외과계중환자실"), "Patient list must include surgical ICU patients");
-    assert(wardSet.has("신경과병동"), "Patient list must include neurology ward patients");
-    assert(wardSet.has("외과병동"), "Patient list must include surgical ward patients");
-    assert(wardSet.has("호흡기내과병동"), "Patient list must include pulmonology ward patients");
-    assert.strictEqual(wardSet.size, 5, "FHIR patient list must be distributed across exactly five wards");
-    assert.strictEqual(departmentSet.size, 5, "FHIR patient list must be distributed across exactly five departments");
+    EXPECTED_WARDS.forEach((ward) => {
+      assert(wardSet.has(ward), `Patient list must include ${ward}`);
+    });
+    assert.strictEqual(wardSet.size, EXPECTED_WARDS.length, "FHIR patient list must be distributed across exactly seven wards");
+    assert.strictEqual(departmentSet.size, EXPECTED_WARDS.length, "FHIR patient list must be distributed across exactly seven departments");
   } else {
     assert(wardSet.size >= 4, "Fallback patient list must remain distributed across at least four wards");
     assert(departmentSet.size >= 4, "Fallback patient list must remain distributed across at least four departments");

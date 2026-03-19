@@ -3319,6 +3319,581 @@ function jsonResponse(statusCode, body) {
   };
 }
 
+const ACTIVE_DEPARTMENT_SEED_SEARCHES = [
+  { department: "내과계중환자의학과", term: "sepsis", count: 14 },
+  { department: "내과계중환자의학과", term: "septic shock", count: 12 },
+  { department: "내과계중환자의학과", term: "respiratory failure", count: 12 },
+  { department: "내과계중환자의학과", term: "acute heart failure", count: 10 },
+  { department: "내과계중환자의학과", term: "critical illness", count: 10 },
+  { department: "외과계중환자의학과", term: "postoperative", count: 14 },
+  { department: "외과계중환자의학과", term: "trauma", count: 12 },
+  { department: "외과계중환자의학과", term: "hemorrhage", count: 12 },
+  { department: "외과계중환자의학과", term: "peritonitis", count: 10 },
+  { department: "외과계중환자의학과", term: "bowel obstruction", count: 10 },
+  { department: "신경과", term: "stroke", count: 14 },
+  { department: "신경과", term: "cerebral infarction", count: 12 },
+  { department: "신경과", term: "intracranial hemorrhage", count: 12 },
+  { department: "신경과", term: "seizure", count: 10 },
+  { department: "외과", term: "appendicitis", count: 14 },
+  { department: "외과", term: "hernia", count: 12 },
+  { department: "외과", term: "wound", count: 12 },
+  { department: "외과", term: "cholecystitis", count: 10 },
+  { department: "외과", term: "abdominal pain", count: 10 },
+  { department: "호흡기내과", term: "pneumonia", count: 14 },
+  { department: "호흡기내과", term: "copd", count: 12 },
+  { department: "호흡기내과", term: "asthma exacerbation", count: 10 },
+  { department: "호흡기내과", term: "pleural effusion", count: 10 },
+  { department: "소화기내과", term: "liver cirrhosis", count: 12 },
+  { department: "소화기내과", term: "gastrointestinal bleeding", count: 12 },
+  { department: "소화기내과", term: "pancreatitis", count: 10 },
+  { department: "소화기내과", term: "colitis", count: 10 },
+  { department: "신장내과", term: "chronic kidney disease", count: 12 },
+  { department: "신장내과", term: "acute kidney injury", count: 12 },
+  { department: "신장내과", term: "end stage renal disease", count: 10 },
+  { department: "신장내과", term: "glomerulonephritis", count: 10 }
+];
+
+const ACTIVE_SYNTHETIC_WARD_LAYOUT = [
+  { ward: "내과계중환자실", roomPrefix: "MICU", roomBase: 1, roomDigits: 2, doctorTeam: "내과계중환자 진료팀" },
+  { ward: "외과계중환자실", roomPrefix: "SICU", roomBase: 21, roomDigits: 2, doctorTeam: "외과계중환자 진료팀" },
+  { ward: "신경과병동", roomPrefix: "N", roomBase: 301, roomDigits: 3, doctorTeam: "신경과 진료팀" },
+  { ward: "외과병동", roomPrefix: "S", roomBase: 401, roomDigits: 3, doctorTeam: "외과 진료팀" },
+  { ward: "호흡기내과병동", roomPrefix: "P", roomBase: 501, roomDigits: 3, doctorTeam: "호흡기내과 진료팀" },
+  { ward: "소화기내과병동", roomPrefix: "GI", roomBase: 601, roomDigits: 3, doctorTeam: "소화기내과 진료팀" },
+  { ward: "신장내과병동", roomPrefix: "R", roomBase: 701, roomDigits: 3, doctorTeam: "신장내과 진료팀" }
+];
+
+const ACTIVE_WARD_DISPLAY_ORDER = ACTIVE_SYNTHETIC_WARD_LAYOUT.map((item) => item.ward);
+const ACTIVE_DEPARTMENT_PRIORITY_ORDER = [
+  "내과계중환자의학과",
+  "외과계중환자의학과",
+  "신경과",
+  "외과",
+  "호흡기내과",
+  "소화기내과",
+  "신장내과"
+];
+
+const ACTIVE_DEPARTMENT_WARD_MAP = new Map([
+  ["내과계중환자의학과", "내과계중환자실"],
+  ["외과계중환자의학과", "외과계중환자실"],
+  ["신경과", "신경과병동"],
+  ["외과", "외과병동"],
+  ["호흡기내과", "호흡기내과병동"],
+  ["소화기내과", "소화기내과병동"],
+  ["신장내과", "신장내과병동"]
+]);
+
+const ACTIVE_WARD_TARGET_COUNTS_60 = new Map([
+  ["내과계중환자실", 10],
+  ["외과계중환자실", 10],
+  ["신경과병동", 10],
+  ["외과병동", 10],
+  ["호흡기내과병동", 10],
+  ["소화기내과병동", 5],
+  ["신장내과병동", 5]
+]);
+
+const ACTIVE_WARD_TARGET_RATIO = {
+  내과계중환자실: 1 / 6,
+  외과계중환자실: 1 / 6,
+  신경과병동: 1 / 6,
+  외과병동: 1 / 6,
+  호흡기내과병동: 1 / 6,
+  소화기내과병동: 1 / 12,
+  신장내과병동: 1 / 12
+};
+
+const ACTIVE_KOREAN_FAMILY_NAMES = ["김", "이", "박", "최", "정", "강", "조", "윤", "장", "임", "한", "오", "서", "신", "권", "황"];
+const ACTIVE_KOREAN_GIVEN_FIRST = ["민", "서", "지", "하", "도", "예", "유", "주", "채", "현", "준", "시", "다", "가", "태", "수", "재", "은"];
+const ACTIVE_KOREAN_GIVEN_SECOND = ["준", "윤", "아", "미", "린", "원", "리", "빈", "율", "호", "솔", "진", "연", "희", "보", "람", "경", "수"];
+
+async function fetchDepartmentSeedPatientResources(targetCount) {
+  const seedGroups = new Map();
+  const seedHints = new Map();
+  const selectedIds = [];
+  const selectedIdSet = new Set();
+
+  const seedResults = await mapInBatches(ACTIVE_DEPARTMENT_SEED_SEARCHES, 6, async (search) => {
+    const conditions = await safeFetchResources(
+      `/Condition?code:text=${encodeURIComponent(search.term)}&_count=${search.count}&_elements=id,subject,code,recordedDate,onsetDateTime`
+    );
+    return { search, conditions };
+  });
+
+  seedResults.forEach(({ search, conditions }) => {
+    const existingIds = seedGroups.get(search.department) || [];
+    const nextIds = [];
+
+    conditions.forEach((condition) => {
+      const patientId = extractReferenceId(condition?.subject?.reference);
+      if (!patientId) return;
+      nextIds.push(patientId);
+
+      const hint = seedHints.get(patientId) || {
+        department: search.department,
+        diagnosisList: []
+      };
+
+      const label = conditionLabel(condition);
+      if (label) {
+        hint.diagnosisList = unique([...hint.diagnosisList, label]).slice(0, 6);
+      }
+
+      if (getDepartmentSortIndex(search.department) < getDepartmentSortIndex(hint.department)) {
+        hint.department = search.department;
+      }
+
+      seedHints.set(patientId, hint);
+    });
+
+    seedGroups.set(search.department, unique([...existingIds, ...nextIds]));
+  });
+
+  const baseQuota = Math.min(
+    DEPARTMENT_MIN_PATIENT_COUNT,
+    Math.max(1, Math.floor(targetCount / Math.max(1, ACTIVE_DEPARTMENT_PRIORITY_ORDER.length)))
+  );
+
+  ACTIVE_DEPARTMENT_PRIORITY_ORDER.forEach((department) => {
+    const group = (seedGroups.get(department) || []).slice();
+    let selectedForDepartment = 0;
+
+    while (group.length && selectedIds.length < targetCount && selectedForDepartment < baseQuota) {
+      const nextId = String(group.shift() || "").trim();
+      if (!nextId || selectedIdSet.has(nextId)) continue;
+      selectedIds.push(nextId);
+      selectedIdSet.add(nextId);
+      selectedForDepartment += 1;
+    }
+
+    seedGroups.set(department, group);
+  });
+
+  while (selectedIds.length < targetCount) {
+    let addedInRound = 0;
+
+    ACTIVE_DEPARTMENT_PRIORITY_ORDER.forEach((department) => {
+      if (selectedIds.length >= targetCount) return;
+      const group = seedGroups.get(department) || [];
+      while (group.length) {
+        const nextId = String(group.shift() || "").trim();
+        if (!nextId || selectedIdSet.has(nextId)) continue;
+        selectedIds.push(nextId);
+        selectedIdSet.add(nextId);
+        addedInRound += 1;
+        break;
+      }
+    });
+
+    if (!addedInRound) break;
+  }
+
+  return {
+    resources: await fetchPatientResourcesByIds(selectedIds),
+    seedHints
+  };
+}
+
+function selectBalancedPatientProfiles(profiles, count) {
+  const candidates = (profiles || []).filter(Boolean).sort(compareClinicalProfiles);
+  const wardGroups = buildWardProfileGroups(candidates);
+  const wardTargets = buildWardSelectionTargets(count);
+  const selected = [];
+  const selectedIds = new Set();
+  const selectedWardCounts = new Map();
+  const selectedDepartmentCounts = new Map();
+
+  let addedInRound = true;
+  while (selected.length < count && addedInRound) {
+    addedInRound = false;
+
+    ACTIVE_WARD_DISPLAY_ORDER.forEach((ward) => {
+      if (selected.length >= count) return;
+      const target = wardTargets.get(ward) || 0;
+      const current = selectedWardCounts.get(ward) || 0;
+      if (current >= target) return;
+
+      const group = wardGroups.get(ward) || [];
+      while (group.length) {
+        const profile = group.shift();
+        if (!profile || selectedIds.has(String(profile.id))) continue;
+        registerSelectedProfile(profile, selected, selectedIds, selectedWardCounts, selectedDepartmentCounts);
+        addedInRound = true;
+        break;
+      }
+    });
+  }
+
+  if (selected.length < count) {
+    const leftovers = [];
+    wardGroups.forEach((group) => leftovers.push(...group));
+    leftovers
+      .sort(compareClinicalProfiles)
+      .forEach((profile) => {
+        if (!profile || selected.length >= count || selectedIds.has(String(profile.id))) return;
+        const ward = String(profile.ward || "").trim();
+        const target = wardTargets.get(ward) || 0;
+        const current = selectedWardCounts.get(ward) || 0;
+        if (ward && target > 0 && current >= target) return;
+        registerSelectedProfile(profile, selected, selectedIds, selectedWardCounts, selectedDepartmentCounts);
+      });
+  }
+
+  if (selected.length < count) {
+    const leftovers = [];
+    wardGroups.forEach((group) => leftovers.push(...group));
+    leftovers
+      .sort(compareClinicalProfiles)
+      .forEach((profile) => {
+        if (!profile || selected.length >= count || selectedIds.has(String(profile.id))) return;
+        registerSelectedProfile(profile, selected, selectedIds, selectedWardCounts, selectedDepartmentCounts);
+      });
+  }
+
+  return selected.slice(0, count);
+}
+
+function getDepartmentSortIndex(department) {
+  const normalized = String(department || "").trim();
+  const fixedIndex = ACTIVE_DEPARTMENT_PRIORITY_ORDER.indexOf(normalized);
+  return fixedIndex >= 0 ? fixedIndex : ACTIVE_DEPARTMENT_PRIORITY_ORDER.length + 1;
+}
+
+function buildWardProfileGroups(profiles) {
+  const groups = new Map();
+  ACTIVE_WARD_DISPLAY_ORDER.forEach((ward) => groups.set(ward, []));
+
+  (profiles || []).forEach((profile) => {
+    const ward = String(profile?.ward || "호흡기내과병동").trim() || "호흡기내과병동";
+    if (!groups.has(ward)) groups.set(ward, []);
+    groups.get(ward).push(profile);
+  });
+
+  groups.forEach((items, ward) => {
+    groups.set(ward, items.slice().sort(compareClinicalProfiles));
+  });
+
+  return groups;
+}
+
+function buildWardSelectionTargets(count) {
+  if (count === 60) {
+    return new Map(ACTIVE_WARD_TARGET_COUNTS_60);
+  }
+
+  const targets = new Map();
+  let allocated = 0;
+
+  ACTIVE_WARD_DISPLAY_ORDER.forEach((ward) => {
+    const rawTarget = Math.max(1, Math.round(count * (ACTIVE_WARD_TARGET_RATIO[ward] || 0)));
+    targets.set(ward, rawTarget);
+    allocated += rawTarget;
+  });
+
+  while (allocated > count) {
+    const ward = ACTIVE_WARD_DISPLAY_ORDER
+      .slice()
+      .sort((left, right) => (targets.get(right) || 0) - (targets.get(left) || 0))
+      .find((item) => (targets.get(item) || 0) > 1);
+    if (!ward) break;
+    targets.set(ward, (targets.get(ward) || 0) - 1);
+    allocated -= 1;
+  }
+
+  while (allocated < count) {
+    const ward = ACTIVE_WARD_DISPLAY_ORDER
+      .slice()
+      .sort((left, right) => (targets.get(left) || 0) - (targets.get(right) || 0))[0];
+    targets.set(ward, (targets.get(ward) || 0) + 1);
+    allocated += 1;
+  }
+
+  return targets;
+}
+
+function inferClinicalDepartment(diagnosisList) {
+  const source = normalizeClinicalText((diagnosisList || []).join(" / "));
+  if (!source) return "호흡기내과";
+
+  if (SURGICAL_ICU_PATTERN.test(source) && /postop|post-op|postoperative|trauma|hemorrhage|bleeding|peritonitis|bowel obstruction|laparotomy|thoracotomy/.test(source)) {
+    return "외과계중환자의학과";
+  }
+
+  if (MEDICAL_ICU_PATTERN.test(source) && /shock|sepsis|septic|respiratory failure|ards|ventilator|ecmo|intubation|unstable|hemodynamic|heart failure|status epilepticus/.test(source)) {
+    return "내과계중환자의학과";
+  }
+
+  if (/stroke|cerebral|concussion|brain|neuro|seizure|hemiplegia|aphasia|parkinson|dementia/.test(source)) {
+    return "신경과";
+  }
+
+  if (/hematemesis|melena|hematochezia|gi bleed|gastrointestinal|cirrhosis|hepatitis|pancreatitis|colitis|hepatic|varix|cholangitis|ascites|liver failure/.test(source)) {
+    return "소화기내과";
+  }
+
+  if (/ckd|esrd|renal|kidney disease|kidney injury|glomerulonephritis|proteinuria|nephrotic|nephritic|uremia|dialysis/.test(source)) {
+    return "신장내과";
+  }
+
+  if (/fracture|sprain|strain|injury|trauma|whiplash|laceration|wound|postop|post-op|surgery|hernia|appendic|arthr|joint|spine|cholecystitis|ileus|obstruction/.test(source)) {
+    return "외과";
+  }
+
+  if (/sinusitis|pharyngitis|tonsillitis|otitis|rhinitis|laryng|bronchitis|pneumonia|copd|asthma|pleural effusion|resp/.test(source)) {
+    return "호흡기내과";
+  }
+
+  return "호흡기내과";
+}
+
+function buildSyntheticPatientLabel(id, fallbackIndex = 0) {
+  const numericCode = Number.parseInt(buildSyntheticCode(id, fallbackIndex), 10) || Math.max(1, fallbackIndex || 1);
+  const familyIndex = numericCode % ACTIVE_KOREAN_FAMILY_NAMES.length;
+  const givenCode = Math.floor(numericCode / ACTIVE_KOREAN_FAMILY_NAMES.length);
+  const firstIndex = givenCode % ACTIVE_KOREAN_GIVEN_FIRST.length;
+  const secondIndex = Math.floor(givenCode / ACTIVE_KOREAN_GIVEN_FIRST.length) % ACTIVE_KOREAN_GIVEN_SECOND.length;
+  return `${ACTIVE_KOREAN_FAMILY_NAMES[familyIndex]}${ACTIVE_KOREAN_GIVEN_FIRST[firstIndex]}${ACTIVE_KOREAN_GIVEN_SECOND[secondIndex]}`;
+}
+
+function buildSyntheticWardAssignment(id, fallbackIndex = 0, options = {}) {
+  const numericCode = Number.parseInt(buildSyntheticCode(id, fallbackIndex), 10) || Math.max(1, fallbackIndex || 1);
+  const absoluteIndex = Math.max(0, numericCode - 1);
+  const diagnosisText = normalizeClinicalText((options.diagnosisList || []).join(" / "));
+  const department = String(options.department || "").trim();
+  const preferredWard = inferWardFromClinicalContext(department, diagnosisText, numericCode);
+  const wardSpec = resolveWardSpec(preferredWard) || ACTIVE_SYNTHETIC_WARD_LAYOUT[absoluteIndex % ACTIVE_SYNTHETIC_WARD_LAYOUT.length];
+  const slot = Math.floor(absoluteIndex / Math.max(1, ACTIVE_SYNTHETIC_WARD_LAYOUT.length));
+  const roomNumber = String(wardSpec.roomBase + slot).padStart(wardSpec.roomDigits, "0");
+
+  return {
+    ward: wardSpec.ward,
+    room: `${wardSpec.roomPrefix}-${roomNumber}`,
+    doctorTeam: wardSpec.doctorTeam,
+    department: department || wardDepartmentFromName(wardSpec.ward)
+  };
+}
+
+function inferWardFromClinicalContext(department, diagnosisText, numericCode) {
+  const safeDepartment = String(department || "").trim();
+  const diagnosisSource = String(diagnosisText || "");
+  const mappedWard = ACTIVE_DEPARTMENT_WARD_MAP.get(safeDepartment);
+
+  if (mappedWard) {
+    return mappedWard;
+  }
+
+  if (SURGICAL_ICU_PATTERN.test(diagnosisSource)) {
+    return "외과계중환자실";
+  }
+
+  if (MEDICAL_ICU_PATTERN.test(diagnosisSource) && /shock|sepsis|septic|respiratory failure|ards|ventilator|ecmo|intubation|unstable|hemodynamic/.test(diagnosisSource)) {
+    return "내과계중환자실";
+  }
+
+  if (/stroke|cerebral|intracranial|seizure|brain|neuro/.test(diagnosisSource)) {
+    return "신경과병동";
+  }
+
+  if (/hematemesis|melena|hematochezia|gi bleed|gastrointestinal|cirrhosis|hepatitis|pancreatitis|colitis|hepatic|varix|cholangitis|ascites|liver failure/.test(diagnosisSource)) {
+    return "소화기내과병동";
+  }
+
+  if (/ckd|esrd|renal|kidney disease|kidney injury|glomerulonephritis|proteinuria|nephrotic|nephritic|uremia|dialysis/.test(diagnosisSource)) {
+    return "신장내과병동";
+  }
+
+  if (/fracture|sprain|strain|injury|trauma|whiplash|laceration|wound|postop|post-op|surgery|hernia|appendic|arthr|joint|spine|cholecystitis|ileus|obstruction/.test(diagnosisSource)) {
+    return "외과병동";
+  }
+
+  if (numericCode % 7 === 0) return "신장내과병동";
+  if (numericCode % 6 === 0) return "소화기내과병동";
+  return "호흡기내과병동";
+}
+
+function resolveWardSpec(ward) {
+  return ACTIVE_SYNTHETIC_WARD_LAYOUT.find((item) => item.ward === ward) || null;
+}
+
+function wardDepartmentFromName(ward) {
+  const safeWard = String(ward || "").trim();
+  if (safeWard === "내과계중환자실") return "내과계중환자의학과";
+  if (safeWard === "외과계중환자실") return "외과계중환자의학과";
+  if (safeWard === "신경과병동") return "신경과";
+  if (safeWard === "외과병동") return "외과";
+  if (safeWard === "호흡기내과병동") return "호흡기내과";
+  if (safeWard === "소화기내과병동") return "소화기내과";
+  if (safeWard === "신장내과병동") return "신장내과";
+  return "";
+}
+
+function buildSyntheticDoctorTeam(department, ward) {
+  const safeDepartment = String(department || "").trim();
+  const safeWard = String(ward || "").trim();
+  const displayDepartment = safeDepartment || wardDepartmentFromName(safeWard);
+  if (displayDepartment) return `${displayDepartment} 주치의팀`;
+  if (safeWard) return `${safeWard} 진료팀`;
+  return "주치의팀";
+}
+
+function buildWardTargetSequence(count) {
+  const targets = buildWardSelectionTargets(count);
+  const sequence = [];
+  ACTIVE_WARD_DISPLAY_ORDER.forEach((ward) => {
+    for (let index = 0; index < (targets.get(ward) || 0); index += 1) {
+      sequence.push(ward);
+    }
+  });
+  return sequence.slice(0, count);
+}
+
+function scoreProfileForWard(profile, ward) {
+  const department = String(profile?.department || "").trim();
+  const diagnosis = normalizeClinicalText(profile?.diagnosis || "");
+  const targetDepartment = wardDepartmentFromName(ward);
+  let score = Number(profile?.clinicalQualityScore || 0);
+
+  if (String(profile?.ward || "").trim() === ward) score += 100;
+  if (department === targetDepartment) score += 60;
+
+  if (ward === "내과계중환자실" && /sepsis|shock|respiratory failure|critical|heart failure|ventilator|ecmo/.test(diagnosis)) score += 40;
+  if (ward === "외과계중환자실" && /postop|post-op|postoperative|trauma|hemorrhage|peritonitis|bowel obstruction/.test(diagnosis)) score += 40;
+  if (ward === "신경과병동" && /stroke|cerebral|intracranial|seizure|neuro/.test(diagnosis)) score += 40;
+  if (ward === "외과병동" && /appendic|hernia|wound|surgery|cholecystitis|obstruction/.test(diagnosis)) score += 40;
+  if (ward === "호흡기내과병동" && /pneumonia|copd|asthma|pleural effusion|resp/.test(diagnosis)) score += 40;
+  if (ward === "소화기내과병동" && /cirrhosis|hepatitis|pancreatitis|colitis|gi bleed|hematemesis|melena|ascites|varix/.test(diagnosis)) score += 40;
+  if (ward === "신장내과병동" && /kidney|renal|ckd|esrd|dialysis|glomerulonephritis|uremia/.test(diagnosis)) score += 40;
+
+  return score;
+}
+
+function buildDepartmentDiagnosisFallback(department, currentDiagnosis, numericCode = 0) {
+  const templates = {
+    내과계중환자의학과: [
+      "Sepsis with septic shock",
+      "Acute respiratory failure",
+      "Acute decompensated heart failure",
+      "Severe pneumonia"
+    ],
+    외과계중환자의학과: [
+      "Postoperative hemorrhage",
+      "Traumatic injury with hemorrhagic shock",
+      "Peritonitis after bowel perforation",
+      "Postoperative respiratory failure"
+    ],
+    신경과: [
+      "Acute ischemic stroke",
+      "Intracranial hemorrhage",
+      "Seizure disorder exacerbation",
+      "Cerebral infarction"
+    ],
+    외과: [
+      "Acute appendicitis",
+      "Postoperative wound care",
+      "Inguinal hernia",
+      "Cholecystitis"
+    ],
+    호흡기내과: [
+      "Pneumonia",
+      "COPD exacerbation",
+      "Asthma exacerbation",
+      "Pleural effusion"
+    ],
+    소화기내과: [
+      "Liver cirrhosis with ascites",
+      "Gastrointestinal bleeding",
+      "Acute pancreatitis",
+      "Infectious colitis"
+    ],
+    신장내과: [
+      "Chronic kidney disease",
+      "Acute kidney injury",
+      "End stage renal disease",
+      "Glomerulonephritis"
+    ]
+  };
+
+  const source = String(currentDiagnosis || "").trim();
+  if (isDiagnosisAlignedToDepartment(department, source)) return source;
+
+  const options = templates[department] || templates["호흡기내과"];
+  return options[numericCode % options.length];
+}
+
+function isDiagnosisAlignedToDepartment(department, diagnosis) {
+  const text = normalizeClinicalText(diagnosis);
+  if (!text) return false;
+  if (department === "내과계중환자의학과") return /sepsis|shock|respiratory failure|critical|heart failure|ventilator|ecmo/.test(text);
+  if (department === "외과계중환자의학과") return /postop|post-op|postoperative|trauma|hemorrhage|peritonitis|bowel obstruction/.test(text);
+  if (department === "신경과") return /stroke|cerebral|intracranial|seizure|neuro/.test(text);
+  if (department === "외과") return /appendic|hernia|wound|surgery|cholecystitis|obstruction/.test(text);
+  if (department === "호흡기내과") return /pneumonia|copd|asthma|pleural effusion|resp/.test(text);
+  if (department === "소화기내과") return /cirrhosis|hepatitis|pancreatitis|colitis|gi bleed|hematemesis|melena|ascites|varix/.test(text);
+  if (department === "신장내과") return /kidney|renal|ckd|esrd|dialysis|glomerulonephritis|uremia/.test(text);
+  return false;
+}
+
+function retargetProfileToWard(profile, ward, slotIndex) {
+  const department = wardDepartmentFromName(ward);
+  const numericCode = Number.parseInt(buildSyntheticCode(profile?.id, slotIndex + 1), 10) || slotIndex + 1;
+  const diagnosis = buildDepartmentDiagnosisFallback(department, profile?.diagnosis, numericCode);
+  const room = buildSyntheticWardAssignment(profile?.id, slotIndex + 1, {
+    department,
+    diagnosisList: [diagnosis]
+  }).room;
+
+  return {
+    ...profile,
+    ward,
+    department,
+    room,
+    diagnosis,
+    doctor: buildSyntheticDoctorTeam(department, ward)
+  };
+}
+
+function selectBalancedPatientProfiles(profiles, count) {
+  const remaining = (profiles || []).filter(Boolean).slice();
+  const selected = [];
+  const targetSequence = buildWardTargetSequence(count);
+
+  targetSequence.forEach((ward, slotIndex) => {
+    if (!remaining.length) return;
+    let bestIndex = 0;
+    let bestScore = Number.NEGATIVE_INFINITY;
+
+    remaining.forEach((profile, profileIndex) => {
+      const score = scoreProfileForWard(profile, ward);
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = profileIndex;
+      }
+    });
+
+    const [picked] = remaining.splice(bestIndex, 1);
+    if (!picked) return;
+    selected.push(retargetProfileToWard(picked, ward, slotIndex));
+  });
+
+  while (selected.length < count && remaining.length) {
+    const slotIndex = selected.length;
+    const fallbackWard = targetSequence[slotIndex % Math.max(1, targetSequence.length)] || "호흡기내과병동";
+    selected.push(retargetProfileToWard(remaining.shift(), fallbackWard, slotIndex));
+  }
+
+  return selected.slice(0, count);
+}
+
+const baseNormalizePatientDetail = normalizePatientDetail;
+normalizePatientDetail = function normalizePatientDetailPatched(data) {
+  const detail = baseNormalizePatientDetail(data);
+  const numericCode = Number.parseInt(buildSyntheticCode(detail.id, 1), 10) || 1;
+  detail.diagnosis = buildDepartmentDiagnosisFallback(detail.department, detail.diagnosis, numericCode);
+  detail.doctor = buildSyntheticDoctorTeam(detail.department, detail.ward);
+  return detail;
+};
+
 module.exports = {
   handler: exports.handler,
   fetchPatientList,

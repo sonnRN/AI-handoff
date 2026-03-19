@@ -1,13 +1,15 @@
 const assert = require("assert");
 const { handler } = require("../src/server/handlers/patientsApi");
 
-const EXPECTED_WARDS = [
-  "내과계중환자실",
-  "외과계중환자실",
-  "신경과병동",
-  "외과병동",
-  "호흡기내과병동"
-];
+const EXPECTED_WARD_COUNTS = new Map([
+  ["내과계중환자실", 10],
+  ["외과계중환자실", 10],
+  ["신경과병동", 10],
+  ["외과병동", 10],
+  ["호흡기내과병동", 10],
+  ["소화기내과병동", 5],
+  ["신장내과병동", 5]
+]);
 
 async function fetchPayload(queryStringParameters) {
   const response = await handler({ queryStringParameters });
@@ -25,7 +27,7 @@ function assertHourlyRichness(detail, label) {
   assert(Array.isArray(latest.hourly), `${label}: hourly section missing`);
   assert.strictEqual(latest.hourly.length, 24, `${label}: hourly section must cover 24 hours`);
   assert(latest.hourly.every((slot) => Array.isArray(slot.notes) && slot.notes.length >= 1), `${label}: every hour must contain at least one nursing note`);
-  const minimumInjectionCount = detail.ward.includes("중환자실") ? 8 : 5;
+  const minimumInjectionCount = String(detail.ward || "").includes("중환자실") ? 8 : 5;
   assert((latest.orders?.inj || []).length >= minimumInjectionCount, `${label}: injection list must contain at least ${minimumInjectionCount} daily items`);
   assert(Array.isArray(latest.labSummary), `${label}: labSummary missing`);
   assert(Array.isArray(latest.specialDetails), `${label}: specialDetails missing`);
@@ -37,17 +39,17 @@ async function main() {
 
   const countsByWard = new Map();
   list.patients.forEach((patient) => {
-    assert(/^[가-힣]{3,4}$/.test(String(patient.name || "")), `Patient name must be a simple Korean name: ${patient.name}`);
+    assert(/^[가-힣]{3}$/.test(String(patient.name || "")), `Patient name must be a unique three-syllable Korean name: ${patient.name}`);
     countsByWard.set(patient.ward, (countsByWard.get(patient.ward) || 0) + 1);
   });
 
-  EXPECTED_WARDS.forEach((ward) => {
+  EXPECTED_WARD_COUNTS.forEach((expectedCount, ward) => {
     assert(countsByWard.has(ward), `Ward missing from FHIR patient list: ${ward}`);
-    assert((countsByWard.get(ward) || 0) >= 5, `Ward must contain at least five patients: ${ward}`);
+    assert.strictEqual(countsByWard.get(ward), expectedCount, `Ward count mismatch for ${ward}`);
   });
-  assert.strictEqual(countsByWard.size, 5, "FHIR patient list must only use the configured five wards");
+  assert.strictEqual(countsByWard.size, EXPECTED_WARD_COUNTS.size, "FHIR patient list must only use the configured wards");
 
-  for (const ward of EXPECTED_WARDS) {
+  for (const ward of EXPECTED_WARD_COUNTS.keys()) {
     const sample = list.patients.find((patient) => patient.ward === ward);
     assert(sample, `Missing sample for ward ${ward}`);
     const detail = await fetchPayload({
