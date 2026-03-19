@@ -14,7 +14,7 @@ let uiInitialized = false;
 const KOREA_TIMEZONE = 'Asia/Seoul';
 const PATIENT_LIST_COUNT = 60;
 const PATIENT_LIST_PAGE_SIZE = 20;
-const WARD_DISPLAY_ORDER = ['내과계중환자실', '외과계중환자실', 'N병동', 'S병동', '내과병동', '재활병동'];
+const WARD_DISPLAY_ORDER = ['내과계중환자실', '외과계중환자실', '신경과병동', '외과병동', '호흡기내과병동'];
 
 function unique(items) {
   return Array.from(new Set((items || []).filter(Boolean)));
@@ -212,7 +212,13 @@ async function getPatientData(pid) {
   const cacheKey = String(pid);
   if (patientDetailCache.has(cacheKey)) return patientDetailCache.get(cacheKey);
 
-  const response = await fetch(`${externalApiBase}?id=${encodeURIComponent(pid)}`);
+  const patientSummary = patientStore.find(pt => String(pt.id) === cacheKey) || {};
+  const detailParams = [
+    `id=${encodeURIComponent(pid)}`,
+    patientSummary.department ? `department=${encodeURIComponent(patientSummary.department)}` : '',
+    patientSummary.ward ? `ward=${encodeURIComponent(patientSummary.ward)}` : ''
+  ].filter(Boolean).join('&');
+  const response = await fetch(`${externalApiBase}?${detailParams}`);
   if (!response.ok) {
     throw new Error(`External patient detail failed: ${response.status}`);
   }
@@ -934,37 +940,52 @@ function sortLabCategories(categories) {
   });
 }
 
-function renderLabSummary(pid, labs) {
-  const categories = sortLabCategories(Object.keys(labs || {}));
-  if (!categories.length) return '-';
+function renderLabSummary(pid, dateKey, labSummary, labs) {
+  const summaryRows = Array.isArray(labSummary) && labSummary.length
+    ? labSummary
+    : sortLabCategories(Object.keys(labs || {})).map(category => ({
+      category,
+      performedAt: `${dateKey} 08:00`,
+      itemCount: Object.keys((labs || {})[category] || {}).length,
+      referenceOnly: false
+    }));
 
-  return categories.map(category => {
-    const entries = Object.entries(labs[category] || {}).slice(0, 6);
-    if (!entries.length) return '';
+  if (!summaryRows.length) return '-';
 
-    const rows = entries.map(([key, rawValue]) => {
-      const value = formatLabValue(rawValue);
-      const status = getLabStatus(key, value).status;
-      const color = status === 'high' ? '#c62828' : status === 'low' ? '#1565c0' : '#333';
-      return `<tr>
-        <td style="border:1px solid #dcdcdc; padding:4px 6px; font-weight:bold;">${key}</td>
-        <td style="border:1px solid #dcdcdc; padding:4px 6px; color:${color}; font-weight:${status === 'normal' ? 'normal' : 'bold'};">${value}</td>
-      </tr>`;
-    }).join('');
+  return `<div class="result-summary-list">${summaryRows.map(row => `
+    <div class="result-summary-item">
+      <div>
+        <div class="result-summary-title">${row.category}</div>
+        <div class="result-summary-meta">
+          ${row.performedAt || '-'} ${row.referenceOnly ? '최근 결과 참조' : '시행'} · ${row.itemCount || 0}항목
+        </div>
+      </div>
+      <button class="result-link-btn" onclick="openLabModal('${pid}', '${row.category}')">상세 보기</button>
+    </div>
+  `).join('')}</div>`;
+}
 
-    return `<div style="margin-bottom:8px;">
-      <div class="lab-link-item" onclick="openLabModal('${pid}', '${category}')" style="cursor:pointer; color:#1976d2; margin-bottom:4px; font-weight:bold;">${category}</div>
-      <table style="width:100%; border-collapse:collapse; font-size:12px; background:#fff;">
-        <thead>
-          <tr style="background:#f3f6fb;">
-            <th style="border:1px solid #dcdcdc; padding:4px 6px; text-align:left;">검사항목</th>
-            <th style="border:1px solid #dcdcdc; padding:4px 6px; text-align:left;">수치</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>`;
-  }).join('');
+function renderSpecialSummary(pid, dateKey, details, fallbackItems) {
+  const items = Array.isArray(details) && details.length
+    ? details
+    : (fallbackItems || []).map((text, index) => ({
+      key: `fallback-${index}`,
+      title: String(text || '특수검사'),
+      performedAt: `${dateKey} 10:00`,
+      summary: String(text || '특수검사')
+    }));
+
+  if (!items.length) return '-';
+
+  return `<div class="result-summary-list">${items.map((item, index) => `
+    <div class="result-summary-item">
+      <div>
+        <div class="result-summary-title">${item.title || item.summary}</div>
+        <div class="result-summary-meta">${item.performedAt || dateKey} 시행</div>
+      </div>
+      <button class="result-link-btn" onclick="openSpecialModal('${pid}', '${dateKey}', ${index})">해석지 보기</button>
+    </div>
+  `).join('')}</div>`;
 }
 
 window.openLabModal = async function (pid, category) {
@@ -979,16 +1000,19 @@ window.openLabModal = async function (pid, category) {
     return alert("Lab 모달창 요소를 찾을 수 없습니다.");
   }
 
-  const allDates = Object.keys(p.dailyData).sort();
+  const allDates = Object.keys(p.dailyData || {}).sort();
+  if (!allDates.length) return alert("검사 데이터가 없습니다.");
 
   let targetCategory = category;
   if (!targetCategory) {
-    if (p.dailyData[allDates[0]].labs) {
-      targetCategory = Object.keys(p.dailyData[allDates[0]].labs)[0];
-    }
+    targetCategory = sortLabCategories(
+      allDates.flatMap(date => Object.keys(p.dailyData?.[date]?.labs || {}))
+    )[0];
   }
 
-  const categories = Object.keys(p.dailyData[allDates[0]].labs || {});
+  const categories = sortLabCategories(
+    allDates.flatMap(date => Object.keys(p.dailyData?.[date]?.labs || {}))
+  );
   let tabHtml = `<div style="display:flex; gap:5px; margin-bottom:10px; border-bottom:2px solid #ddd; padding-bottom:5px;">`;
   categories.forEach(cat => {
     const activeStyle = cat === targetCategory ? 'background:#1976d2; color:white;' : 'background:#eee; color:#333;';
@@ -996,14 +1020,19 @@ window.openLabModal = async function (pid, category) {
   });
   tabHtml += `</div>`;
 
-
-  // 검사 항목 추출 (선택된 카테고리 내)
   let labKeys = [];
-  for (let d of allDates) {
-    if (p.dailyData[d].labs && p.dailyData[d].labs[targetCategory]) {
+  for (const d of allDates) {
+    if (p.dailyData?.[d]?.labs?.[targetCategory]) {
       labKeys = Object.keys(p.dailyData[d].labs[targetCategory]);
       break;
     }
+  }
+
+  if (!labKeys.length) {
+    modalBody.innerHTML = `${tabHtml}<div style="padding:12px;">해당 카테고리의 검사 상세가 없습니다.</div>`;
+    modal.classList.add('active');
+    overlay.classList.add('active');
+    return;
   }
 
   let html = `${tabHtml}<h3 style="margin-bottom:10px;">${p.name}님의 ${targetCategory} 누적 결과</h3>`;
@@ -1036,6 +1065,48 @@ window.openLabModal = async function (pid, category) {
   html += `</tbody></table></div>`;
 
   modalBody.innerHTML = html;
+  modal.classList.add('active');
+  overlay.classList.add('active');
+};
+
+window.openSpecialModal = async function (pid, dateKey, index = 0) {
+  const p = await getPatientData(pid);
+  if (!p) return alert("환자 정보를 찾을 수 없습니다.");
+
+  const data = p.dailyData?.[dateKey];
+  const details = data?.specialDetails || [];
+  if (!details.length) return alert("영상/특수검사 상세가 없습니다.");
+
+  const modalBody = document.getElementById('specialModalBody');
+  const modal = document.getElementById('specialModal');
+  const overlay = document.getElementById('modalOverlay');
+  if (!modalBody || !modal || !overlay) return alert("영상검사 모달을 찾을 수 없습니다.");
+
+  const safeIndex = Math.max(0, Math.min(index, details.length - 1));
+  const active = details[safeIndex];
+  const tabs = details.map((item, itemIndex) => {
+    const activeStyle = itemIndex === safeIndex ? 'background:#1976d2; color:#fff;' : 'background:#eee; color:#333;';
+    return `<button onclick="openSpecialModal('${pid}', '${dateKey}', ${itemIndex})" style="border:none; padding:6px 12px; border-radius:15px; cursor:pointer; font-weight:bold; ${activeStyle}">${item.title}</button>`;
+  }).join('');
+
+  modalBody.innerHTML = `
+    <div style="display:flex; gap:5px; margin-bottom:12px; border-bottom:2px solid #ddd; padding-bottom:6px;">${tabs}</div>
+    <div class="report-sheet">
+      <div class="report-sheet-header">
+        <div class="report-sheet-title">${active.title}</div>
+        <div class="report-sheet-meta">${active.kind || '검사'} · ${active.performedAt || dateKey}</div>
+      </div>
+      <div class="report-sheet-section">
+        <div class="report-sheet-label">Impression</div>
+        <div>${active.impression || '-'}</div>
+      </div>
+      <div class="report-sheet-section">
+        <div class="report-sheet-label">Report</div>
+        <div>${active.body || active.summary || '-'}</div>
+      </div>
+    </div>
+  `;
+
   modal.classList.add('active');
   overlay.classList.add('active');
 };
@@ -1511,8 +1582,8 @@ updateDashboard = async function (pid) {
   setHTML('medScheduleList', renderMedSchedule(data.medSchedule || [], [...inj, ...po]));
 
   const labs = data.labs || {};
-  setHTML('labResult', renderLabSummary(p.id, labs));
-  setHTML('labSpecial', (data.specials || []).map(item => `• ${item}`).join('<br>') || '-');
+  setHTML('labResult', renderLabSummary(p.id, dateKey, data.labSummary || [], labs));
+  setHTML('labSpecial', renderSpecialSummary(p.id, dateKey, data.specialDetails || [], data.specials || []));
 
   const notesHtml = hourly.flatMap(entry => (entry.notes || []).map(note => `
     <div style="border-bottom:1px solid #eee; padding:6px 0; font-size:13px; line-height:1.6;">

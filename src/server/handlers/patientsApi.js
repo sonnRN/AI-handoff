@@ -4,7 +4,7 @@ const {
 } = require("../../mcp/runtime/publicDataPolicy");
 
 const FHIR_BASE_URL = getPublicSafeFhirBaseUrl();
-const DEFAULT_PATIENT_COUNT = 8;
+const DEFAULT_PATIENT_COUNT = 60;
 const TIMELINE_DAYS = 10;
 const FHIR_FETCH_TIMEOUT_MS = Math.max(1000, Number.parseInt(String(process.env.FHIR_FETCH_TIMEOUT_MS || "8000"), 10) || 8000);
 const PATIENT_BATCH_FETCH_SIZE = 20;
@@ -17,92 +17,64 @@ const BALANCED_POOL_MIN = 90;
 const BALANCED_POOL_PADDING = 30;
 const BALANCED_POOL_MAX = 140;
 const DEPARTMENT_SEED_SEARCHES = [
-  { department: "감염내과", term: "sepsis", count: 12 },
-  { department: "감염내과", term: "infection", count: 12 },
-  { department: "감염내과", term: "cellulitis", count: 10 },
-  { department: "호흡기내과", term: "pneumonia", count: 12 },
-  { department: "호흡기내과", term: "bronchitis", count: 10 },
-  { department: "호흡기내과", term: "asthma", count: 10 },
-  { department: "순환기내과", term: "angina", count: 10 },
-  { department: "순환기내과", term: "myocardial", count: 10 },
-  { department: "순환기내과", term: "heart failure", count: 10 },
-  { department: "순환기내과", term: "arrhythmia", count: 8 },
-  { department: "신경과", term: "stroke", count: 12 },
+  { department: "내과계중환자의학과", term: "sepsis", count: 14 },
+  { department: "내과계중환자의학과", term: "septic shock", count: 12 },
+  { department: "내과계중환자의학과", term: "respiratory failure", count: 12 },
+  { department: "내과계중환자의학과", term: "pneumonia", count: 12 },
+  { department: "내과계중환자의학과", term: "acute heart failure", count: 10 },
+  { department: "내과계중환자의학과", term: "infection", count: 10 },
+  { department: "내과계중환자의학과", term: "acute kidney injury", count: 10 },
+  { department: "외과계중환자의학과", term: "postoperative", count: 14 },
+  { department: "외과계중환자의학과", term: "trauma", count: 12 },
+  { department: "외과계중환자의학과", term: "hemorrhage", count: 12 },
+  { department: "외과계중환자의학과", term: "peritonitis", count: 10 },
+  { department: "외과계중환자의학과", term: "appendicitis", count: 10 },
+  { department: "외과계중환자의학과", term: "surgery", count: 10 },
+  { department: "외과계중환자의학과", term: "bowel obstruction", count: 10 },
+  { department: "신경과", term: "stroke", count: 14 },
+  { department: "신경과", term: "cerebral infarction", count: 12 },
+  { department: "신경과", term: "intracranial hemorrhage", count: 10 },
   { department: "신경과", term: "seizure", count: 10 },
-  { department: "신경과", term: "cerebral", count: 10 },
-  { department: "외과", term: "fracture", count: 12 },
-  { department: "외과", term: "hernia", count: 10 },
-  { department: "외과", term: "wound", count: 10 },
-  { department: "외과", term: "appendicitis", count: 8 },
-  { department: "종양내과", term: "cancer", count: 12 },
-  { department: "종양내과", term: "carcinoma", count: 10 },
-  { department: "종양내과", term: "neoplasm", count: 10 },
-  { department: "종양내과", term: "tumor", count: 8 },
-  { department: "소화기내과", term: "gastritis", count: 10 },
-  { department: "소화기내과", term: "colitis", count: 10 },
-  { department: "소화기내과", term: "pancreatitis", count: 8 },
-  { department: "소화기내과", term: "hepatitis", count: 8 },
-  { department: "내분비내과", term: "diabetes", count: 10 },
-  { department: "내분비내과", term: "thyroid", count: 8 },
-  { department: "신장비뇨의학과", term: "renal", count: 10 },
-  { department: "신장비뇨의학과", term: "urinary", count: 10 },
-  { department: "신장비뇨의학과", term: "bladder", count: 8 },
-  { department: "재활의학과", term: "weakness", count: 10 },
-  { department: "재활의학과", term: "deconditioning", count: 8 },
-  { department: "재활의학과", term: "gait", count: 8 },
-  { department: "이비인후과", term: "sinusitis", count: 6 },
-  { department: "이비인후과", term: "tonsillitis", count: 6 },
-  { department: "이비인후과", term: "otitis", count: 4 },
-  { department: "일반내과", term: "hypertension", count: 8 },
-  { department: "일반내과", term: "fever", count: 8 },
-  { department: "일반내과", term: "dizziness", count: 6 }
+  { department: "외과", term: "appendicitis", count: 16 },
+  { department: "외과", term: "hernia", count: 14 },
+  { department: "외과", term: "wound", count: 12 },
+  { department: "외과", term: "cholecystitis", count: 12 },
+  { department: "외과", term: "abdominal pain", count: 10 },
+  { department: "호흡기내과", term: "pneumonia", count: 14 },
+  { department: "호흡기내과", term: "copd", count: 12 },
+  { department: "호흡기내과", term: "asthma exacerbation", count: 10 },
+  { department: "호흡기내과", term: "pleural effusion", count: 10 }
 ];
 const SYNTHETIC_WARD_LAYOUT = [
   { ward: "내과계중환자실", roomPrefix: "MICU", roomBase: 1, roomDigits: 2, doctorTeam: "Synthetic Medical Critical Care Team" },
   { ward: "외과계중환자실", roomPrefix: "SICU", roomBase: 21, roomDigits: 2, doctorTeam: "Synthetic Surgical Critical Care Team" },
-  { ward: "N병동", roomPrefix: "N", roomBase: 301, roomDigits: 3, doctorTeam: "Synthetic Neuro Team" },
-  { ward: "S병동", roomPrefix: "S", roomBase: 401, roomDigits: 3, doctorTeam: "Synthetic Surgical Team" },
-  { ward: "내과병동", roomPrefix: "M", roomBase: 501, roomDigits: 3, doctorTeam: "Synthetic Medical Team" },
-  { ward: "재활병동", roomPrefix: "R", roomBase: 601, roomDigits: 3, doctorTeam: "Synthetic Rehab Team" }
+  { ward: "신경과병동", roomPrefix: "N", roomBase: 301, roomDigits: 3, doctorTeam: "Synthetic Neurology Team" },
+  { ward: "외과병동", roomPrefix: "S", roomBase: 401, roomDigits: 3, doctorTeam: "Synthetic General Surgery Team" },
+  { ward: "호흡기내과병동", roomPrefix: "P", roomBase: 501, roomDigits: 3, doctorTeam: "Synthetic Pulmonology Team" }
 ];
 const WARD_DISPLAY_ORDER = SYNTHETIC_WARD_LAYOUT.map((item) => item.ward);
 const DEPARTMENT_PRIORITY_ORDER = [
-  "감염내과",
-  "호흡기내과",
-  "순환기내과",
-  "소화기내과",
-  "내분비내과",
-  "신장비뇨의학과",
+  "내과계중환자의학과",
+  "외과계중환자의학과",
   "신경과",
   "외과",
-  "종양내과",
-  "재활의학과",
-  "이비인후과",
-  "일반내과"
+  "호흡기내과"
 ];
 const MEDICAL_ICU_PATTERN = /shock|sepsis|septic|respiratory failure|ards|ventilator|ecmo|intubation|cardiac arrest|hemodynamic|critical|status epilepticus|unstable|copd exacerbation|asthma exacerbation|pneumonia|heart failure|arrhythmia|aki|dialysis|dka|hhs|gi bleed/i;
 const SURGICAL_ICU_PATTERN = /postop|post-op|postoperative|trauma|hemorrhage|bleeding|perforation|peritonitis|bowel obstruction|ischemia|appendicitis|laparotomy|thoracotomy|pancreatectomy|colectomy|anastomotic|wound dehiscence|surgery/i;
 const DEPARTMENT_WARD_MAP = new Map([
-  ["신경과", "N병동"],
-  ["외과", "S병동"],
-  ["종양내과", "S병동"],
-  ["재활의학과", "재활병동"],
-  ["감염내과", "내과병동"],
-  ["호흡기내과", "내과병동"],
-  ["순환기내과", "내과병동"],
-  ["소화기내과", "내과병동"],
-  ["내분비내과", "내과병동"],
-  ["신장비뇨의학과", "내과병동"],
-  ["이비인후과", "내과병동"],
-  ["일반내과", "내과병동"]
+  ["내과계중환자의학과", "내과계중환자실"],
+  ["외과계중환자의학과", "외과계중환자실"],
+  ["신경과", "신경과병동"],
+  ["외과", "외과병동"],
+  ["호흡기내과", "호흡기내과병동"]
 ]);
 const WARD_TARGET_RATIO = {
-  내과계중환자실: 0.16,
-  외과계중환자실: 0.12,
-  N병동: 0.16,
-  S병동: 0.16,
-  내과병동: 0.28,
-  재활병동: 0.12
+  내과계중환자실: 0.2,
+  외과계중환자실: 0.2,
+  신경과병동: 0.2,
+  외과병동: 0.2,
+  호흡기내과병동: 0.2
 };
 
 const VITAL_CODES = {
@@ -115,16 +87,25 @@ const VITAL_CODES = {
   bodyWeight: ["29463-7"],
   bodyHeight: ["8302-2"]
 };
+const KOREAN_FAMILY_NAMES = ["김", "이", "박", "최", "정", "강", "조", "윤", "장", "임", "한", "오", "서", "신", "권", "황"];
+const KOREAN_GIVEN_FIRST = ["민", "서", "지", "도", "하", "유", "수", "현", "채", "나", "준", "시", "다", "가", "태", "예", "선", "주"];
+const KOREAN_GIVEN_SECOND = ["준", "연", "우", "민", "윤", "현", "린", "호", "율", "아", "은", "진", "원", "서", "별", "영", "혁", "수"];
+const LAB_CATEGORY_DISPLAY_ORDER = ["CBC", "화학검사", "전해질", "간기능", "신장기능", "염증검사", "혈액가스", "응고검사", "요검사", "기타"];
 
 exports.handler = async function handler(event) {
   try {
     const id = event.queryStringParameters && event.queryStringParameters.id;
     const requestedCount = event.queryStringParameters && event.queryStringParameters.count;
     const requestedCursor = event.queryStringParameters && event.queryStringParameters.cursor;
+    const requestedDepartment = event.queryStringParameters && event.queryStringParameters.department;
+    const requestedWard = event.queryStringParameters && event.queryStringParameters.ward;
     const patientCount = normalizePatientCount(requestedCount);
 
     if (id) {
-      const detail = await fetchPatientDetail(id);
+      const detail = await fetchPatientDetail(id, {
+        departmentHint: requestedDepartment,
+        wardHint: requestedWard
+      });
       return jsonResponse(200, detail);
     }
 
@@ -388,18 +369,19 @@ async function buildPatientListProfiles(resources, seedHints = new Map()) {
       department,
       diagnosisList
     });
+    const assignedDepartment = wardAssignment.department || department;
 
     return {
       ...summary,
       room: wardAssignment.room,
       ward: wardAssignment.ward,
-      department,
-      diagnosis: diagnosisList[0] || `${department} synthetic case`,
-      doctor: buildSyntheticDoctorTeam(department, wardAssignment.ward),
+      department: assignedDepartment,
+      diagnosis: diagnosisList[0] || `${assignedDepartment} synthetic case`,
+      doctor: buildSyntheticDoctorTeam(assignedDepartment, wardAssignment.ward),
       sourceDiagnosisCount: diagnosisList.length,
       clinicalQualityScore: buildClinicalQualityScore({
         diagnosisList,
-        department
+        department: assignedDepartment
       })
     };
   }).then((items) => items.filter(Boolean));
@@ -428,7 +410,7 @@ function selectBalancedPatientProfiles(profiles, count) {
     .slice()
     .sort(compareClinicalProfiles)
     .forEach((profile) => {
-      const department = String(profile?.department || "일반내과").trim() || "일반내과";
+      const department = String(profile?.department || "호흡기내과").trim() || "호흡기내과";
       if (!departmentGroups.has(department)) {
         departmentGroups.set(department, []);
       }
@@ -476,8 +458,8 @@ function buildClinicalQualityScore(input = {}) {
   const diagnosisList = input.diagnosisList || [];
   const department = String(input.department || "").trim();
   let score = Math.min(4, diagnosisList.length) * 10;
-  if (department && department !== "일반내과") score += 8;
-  if (department === "이비인후과") score -= 4;
+  if (department && department !== "호흡기내과") score += 8;
+  if (department === "외과계중환자의학과" || department === "내과계중환자의학과") score += 4;
   if (diagnosisList.some((item) => MEDICAL_ICU_PATTERN.test(String(item || "")) || SURGICAL_ICU_PATTERN.test(String(item || "")))) {
     score += 12;
   }
@@ -505,7 +487,7 @@ function buildWardProfileGroups(profiles) {
   WARD_DISPLAY_ORDER.forEach((ward) => groups.set(ward, []));
 
   (profiles || []).forEach((profile) => {
-    const ward = String(profile?.ward || "내과병동").trim() || "내과병동";
+    const ward = String(profile?.ward || "호흡기내과병동").trim() || "호흡기내과병동";
     if (!groups.has(ward)) groups.set(ward, []);
     groups.get(ward).push(profile);
   });
@@ -551,7 +533,7 @@ function buildWardSelectionTargets(count) {
 function buildDepartmentSelectionCaps(profiles, count) {
   const groups = new Map();
   (profiles || []).forEach((profile) => {
-    const department = String(profile?.department || "일반내과").trim() || "일반내과";
+    const department = String(profile?.department || "호흡기내과").trim() || "호흡기내과";
     if (!groups.has(department)) groups.set(department, 0);
     groups.set(department, groups.get(department) + 1);
   });
@@ -562,11 +544,8 @@ function buildDepartmentSelectionCaps(profiles, count) {
 
   groups.forEach((availableCount, department) => {
     let cap = Math.min(availableCount, baseCap);
-    if (department === "이비인후과") {
-      cap = Math.min(cap, Math.max(3, Math.ceil(count / 10)));
-    }
-    if (department === "일반내과") {
-      cap = Math.min(cap, Math.max(4, Math.ceil(count / 8)));
+    if (department === "내과계중환자의학과" || department === "외과계중환자의학과") {
+      cap = Math.max(cap, Math.ceil(count / 5));
     }
     caps.set(department, cap);
   });
@@ -579,7 +558,7 @@ function takeNextSelectableProfile(group, selectedDepartmentCounts, departmentCa
 
   for (let index = 0; index < group.length; index += 1) {
     const profile = group[index];
-    const department = String(profile?.department || "일반내과").trim() || "일반내과";
+    const department = String(profile?.department || "호흡기내과").trim() || "호흡기내과";
     const currentCount = selectedDepartmentCounts.get(department) || 0;
     const cap = departmentCaps.get(department) || Number.MAX_SAFE_INTEGER;
     if (!allowOverflow && currentCount >= cap) continue;
@@ -596,13 +575,13 @@ function registerSelectedProfile(profile, selected, selectedIds, selectedWardCou
   selected.push(profile);
   selectedIds.add(String(profile.id));
 
-  const ward = String(profile.ward || "내과병동").trim() || "내과병동";
-  const department = String(profile.department || "일반내과").trim() || "일반내과";
+  const ward = String(profile.ward || "호흡기내과병동").trim() || "호흡기내과병동";
+  const department = String(profile.department || "호흡기내과").trim() || "호흡기내과";
   selectedWardCounts.set(ward, (selectedWardCounts.get(ward) || 0) + 1);
   selectedDepartmentCounts.set(department, (selectedDepartmentCounts.get(department) || 0) + 1);
 }
 
-async function fetchPatientDetail(id) {
+async function fetchPatientDetail(id, options = {}) {
   const patient = await fetchFHIR(`/Patient/${encodeURIComponent(id)}`);
 
   const [
@@ -646,7 +625,9 @@ async function fetchPatientDetail(id) {
     serviceRequests,
     carePlans,
     documents,
-    devices
+    devices,
+    departmentHint: options.departmentHint,
+    wardHint: options.wardHint
   });
 }
 
@@ -729,12 +710,12 @@ function normalizePatientSummary(resource, index) {
     registrationNo: buildSyntheticRegistrationNo(resource.id),
     gender: toGender(resource.gender),
     age: resource.birthDate ? String(calculateAge(resource.birthDate)) : "-",
-    department: "일반내과",
-    diagnosis: "외부 FHIR 환자",
+    department: wardAssignment.department || "호흡기내과",
+    diagnosis: `${wardAssignment.department || "호흡기내과"} 외부 FHIR 환자`,
     admitDate: "-",
     bloodType: "-",
     bodyInfo: "-",
-    doctor: buildSyntheticDoctorTeam("일반내과", wardAssignment.ward),
+    doctor: buildSyntheticDoctorTeam(wardAssignment.department || "호흡기내과", wardAssignment.ward),
     isolation: "-",
     external: true
   };
@@ -752,11 +733,15 @@ function normalizePatientDetail(data) {
   const documents = sortDesc(data.documents, documentDate);
 
   const diagnosisList = unique(conditions.map(conditionLabel)).slice(0, 10);
-  const department = inferClinicalDepartment(diagnosisList);
+  const inferredDepartment = inferClinicalDepartment(diagnosisList);
+  const departmentHint = String(data.departmentHint || "").trim();
+  const wardHint = String(data.wardHint || "").trim();
+  const departmentSeed = departmentHint || wardDepartmentFromName(wardHint) || inferredDepartment;
   const wardAssignment = buildSyntheticWardAssignment(data.patient.id, 0, {
-    department,
+    department: departmentSeed,
     diagnosisList
   });
+  const department = departmentHint || wardAssignment.department || inferredDepartment;
   const pastHistory = unique(conditions.map(conditionHistoryLabel)).slice(0, 10);
   const allergyList = unique(data.allergies.map(allergyLabel)).slice(0, 10);
   const procedureList = unique(procedures.map(procedureLabel)).slice(0, 10);
@@ -767,6 +752,7 @@ function normalizePatientDetail(data) {
   const lineTube = buildLineTubeSummary(data.devices, procedures, serviceRequests, observations);
   const observationSummary = summarizeObservations(observations, dateMap);
   const dailyData = buildDailyData({
+    patientId: data.patient.id,
     dates: timelineDates,
     dateMap,
     ward: wardAssignment.ward,
@@ -793,8 +779,8 @@ function normalizePatientDetail(data) {
 
   return {
     id: data.patient.id,
-    room: wardAssignment.room,
-    ward: wardAssignment.ward,
+    room: wardHint ? buildSyntheticWardAssignment(data.patient.id, 0, { department, diagnosisList }).room : wardAssignment.room,
+    ward: wardHint || wardAssignment.ward,
     name: buildSyntheticPatientLabel(data.patient.id),
     registrationNo: buildSyntheticRegistrationNo(data.patient.id),
     gender: toGender(data.patient.gender),
@@ -876,6 +862,7 @@ function summarizeObservations(observations, dateMap = {}) {
   const latestVital = {};
   const vitalsByDate = {};
   const labsByDate = {};
+  const labMetaByDate = {};
   const eventsByDate = {};
   const ioByDate = {};
 
@@ -896,9 +883,17 @@ function summarizeObservations(observations, dateMap = {}) {
 
     if (isLabObservation(observation)) {
       if (!labsByDate[date]) labsByDate[date] = {};
+      if (!labMetaByDate[date]) labMetaByDate[date] = {};
       const category = mapLabCategory(label);
       if (!labsByDate[date][category]) labsByDate[date][category] = {};
       labsByDate[date][category][normalizeLabLabel(label)] = formatNumericValue(value);
+      if (!labMetaByDate[date][category]) {
+        labMetaByDate[date][category] = {
+          performedAt: `${date} ${time}`,
+          itemCount: 0
+        };
+      }
+      labMetaByDate[date][category].itemCount += 1;
     }
 
     if (/input/i.test(label)) {
@@ -925,6 +920,7 @@ function summarizeObservations(observations, dateMap = {}) {
     latestLabs: latestLabs(labsByDate),
     vitalsByDate: mapValues(vitalsByDate, finalizeVital),
     labsByDate,
+    labMetaByDate,
     eventsByDate,
     ioByDate
   };
@@ -1184,49 +1180,29 @@ function normalizeClinicalText(text) {
 
 function inferClinicalDepartment(diagnosisList) {
   const source = normalizeClinicalText((diagnosisList || []).join(" / "));
-  if (!source) return "일반내과";
+  if (!source) return "호흡기내과";
+
+  if (SURGICAL_ICU_PATTERN.test(source) && /postop|post-op|postoperative|trauma|hemorrhage|bleeding|peritonitis|bowel obstruction|laparotomy|thoracotomy/.test(source)) {
+    return "외과계중환자의학과";
+  }
+
+  if (MEDICAL_ICU_PATTERN.test(source) && /shock|sepsis|septic|respiratory failure|ards|ventilator|ecmo|intubation|unstable|hemodynamic|aki|dialysis|heart failure|status epilepticus/.test(source)) {
+    return "내과계중환자의학과";
+  }
 
   if (/stroke|cerebral|concussion|brain|neuro|seizure|hemiplegia|aphasia|parkinson|dementia/.test(source)) {
     return "신경과";
   }
 
-  if (/sinusitis|pharyngitis|tonsillitis|otitis|rhinitis|laryng|bronchitis|pneumonia|copd|asthma/.test(source)) {
-    return /sinusitis|pharyngitis|tonsillitis|otitis|rhinitis|laryng/.test(source) ? "이비인후과" : "호흡기내과";
-  }
-
-  if (/cancer|carcinoma|neoplasm|tumor|lymphoma|leukemia|pancreatic ca|rectal ca/.test(source)) {
-    return "종양내과";
-  }
-
-  if (/fracture|sprain|strain|injury|trauma|whiplash|laceration|wound|postop|post-op|surgery|hernia|appendic|arthr|joint|spine/.test(source)) {
+  if (/fracture|sprain|strain|injury|trauma|whiplash|laceration|wound|postop|post-op|surgery|hernia|appendic|arthr|joint|spine|cholecystitis|ileus|obstruction/.test(source)) {
     return "외과";
   }
 
-  if (/kidney|renal|uti|urinary|pyeloneph|prostate|bladder/.test(source)) {
-    return "신장비뇨의학과";
+  if (/sinusitis|pharyngitis|tonsillitis|otitis|rhinitis|laryng|bronchitis|pneumonia|copd|asthma|pleural effusion|resp/.test(source)) {
+    return "호흡기내과";
   }
 
-  if (/diabetes|thyroid|adrenal|hyperglycemia|hypoglycemia/.test(source)) {
-    return "내분비내과";
-  }
-
-  if (/angina|myocard|heart failure|arrhythm|coronary|cardiac/.test(source)) {
-    return "순환기내과";
-  }
-
-  if (/hepatitis|cirrhosis|gastritis|colitis|crohn|ulcer|liver|pancreatitis|bowel|rectal|colon|abdomen/.test(source)) {
-    return "소화기내과";
-  }
-
-  if (/infection|sepsis|cellulitis|fever|abscess/.test(source)) {
-    return "감염내과";
-  }
-
-  if (/rehab|gait|deconditioning|mobility|self care deficit|weakness/.test(source)) {
-    return "재활의학과";
-  }
-
-  return "일반내과";
+  return "호흡기내과";
 }
 
 function buildHourlyTimeline(date, dayVital, events) {
@@ -1270,8 +1246,8 @@ function buildDoctorOrders(medicationOrders, serviceRequests, carePlans) {
 }
 
 function buildMedicationSchedule(medicationOrders) {
-  return medicationOrders.all.slice(0, 8).map((item) => ({
-    time: inferMedicationTime(item.detail),
+  return medicationOrders.all.slice(0, 12).map((item) => ({
+    time: item.scheduleTime || inferMedicationTime(item.detail),
     name: item.text,
     detail: item.detail
   }));
@@ -1446,11 +1422,7 @@ function buildConsults(serviceRequests, carePlans) {
 }
 
 function buildSpecialsForDate(reports, procedures, documents) {
-  return unique([
-    ...(reports || []).map((item) => reportLabel(item)).slice(0, 3),
-    ...(procedures || []).map((item) => procedureLabel(item)).slice(0, 3),
-    ...(documents || []).map((item) => documentTitle(item)).slice(0, 2)
-  ]).slice(0, 8);
+  return buildSpecialStudyDetails(reports, procedures, documents).map((item) => item.summary);
 }
 
 function buildNeuroItems(diagnosisList, carePlans) {
@@ -2072,7 +2044,11 @@ function formatHumanName(name) {
 }
 
 function buildSyntheticPatientLabel(id, fallbackIndex = 0) {
-  return `Synthetic FHIR Patient ${buildSyntheticCode(id, fallbackIndex)}`;
+  const numericCode = Number.parseInt(buildSyntheticCode(id, fallbackIndex), 10) || Math.max(1, fallbackIndex || 1);
+  const family = KOREAN_FAMILY_NAMES[numericCode % KOREAN_FAMILY_NAMES.length];
+  const first = KOREAN_GIVEN_FIRST[Math.floor(numericCode / 7) % KOREAN_GIVEN_FIRST.length];
+  const second = KOREAN_GIVEN_SECOND[Math.floor(numericCode / 13) % KOREAN_GIVEN_SECOND.length];
+  return `${family}${first}${second}`;
 }
 
 function buildSyntheticWardAssignment(id, fallbackIndex = 0, options = {}) {
@@ -2088,14 +2064,28 @@ function buildSyntheticWardAssignment(id, fallbackIndex = 0, options = {}) {
   return {
     ward: wardSpec.ward,
     room: `${wardSpec.roomPrefix}-${roomNumber}`,
-    doctorTeam: wardSpec.doctorTeam
+    doctorTeam: wardSpec.doctorTeam,
+    department: department || wardDepartmentFromName(wardSpec.ward)
   };
 }
 
 function inferWardFromClinicalContext(department, diagnosisText, numericCode) {
   const safeDepartment = String(department || "").trim();
   const diagnosisSource = String(diagnosisText || "");
-  const isSurgicalDepartment = safeDepartment === "외과" || safeDepartment === "종양내과";
+  const isSurgicalDepartment = safeDepartment === "외과" || safeDepartment === "외과계중환자의학과";
+  const mappedWard = DEPARTMENT_WARD_MAP.get(safeDepartment);
+
+  if (mappedWard) {
+    return mappedWard;
+  }
+
+  if (safeDepartment === "외과계중환자의학과") {
+    return "외과계중환자실";
+  }
+
+  if (safeDepartment === "내과계중환자의학과") {
+    return "내과계중환자실";
+  }
 
   if (SURGICAL_ICU_PATTERN.test(diagnosisSource) && (isSurgicalDepartment || /trauma|hemorrhage|bleeding|postop|post-op|postoperative/.test(diagnosisSource))) {
     return "외과계중환자실";
@@ -2107,32 +2097,30 @@ function inferWardFromClinicalContext(department, diagnosisText, numericCode) {
       : "내과계중환자실";
   }
 
-  const mappedWard = DEPARTMENT_WARD_MAP.get(safeDepartment);
-  if (mappedWard === "내과병동") {
-    const shouldEscalateToIcu = ["감염내과", "호흡기내과", "순환기내과", "소화기내과", "신장비뇨의학과"].includes(safeDepartment)
-      && numericCode % 9 === 0;
-    if (shouldEscalateToIcu) return "내과계중환자실";
-  }
-
-  if (mappedWard === "S병동") {
-    const shouldEscalateToIcu = ["외과", "종양내과"].includes(safeDepartment)
-      && numericCode % 7 === 0;
-    if (shouldEscalateToIcu) return "외과계중환자실";
-  }
-
-  return mappedWard || "내과병동";
+  if (numericCode % 5 === 0) return "내과계중환자실";
+  return "호흡기내과병동";
 }
 
 function resolveWardSpec(ward) {
   return SYNTHETIC_WARD_LAYOUT.find((item) => item.ward === ward) || null;
 }
 
+function wardDepartmentFromName(ward) {
+  if (ward === "내과계중환자실") return "내과계중환자의학과";
+  if (ward === "외과계중환자실") return "외과계중환자의학과";
+  if (ward === "신경과병동") return "신경과";
+  if (ward === "외과병동") return "외과";
+  if (ward === "호흡기내과병동") return "호흡기내과";
+  return "";
+}
+
 function buildSyntheticDoctorTeam(department, ward) {
   const safeDepartment = String(department || "").trim();
   const safeWard = String(ward || "").trim();
-  if (safeDepartment) return `Synthetic ${safeDepartment} Team`;
-  if (safeWard) return `Synthetic ${safeWard} Team`;
-  return "Synthetic Care Team";
+  const displayDepartment = safeDepartment || wardDepartmentFromName(safeWard);
+  if (displayDepartment) return `${displayDepartment} 주치의팀`;
+  if (safeWard) return `${safeWard} 진료팀`;
+  return "주치의팀";
 }
 
 function buildSyntheticRoomLabel(id) {
@@ -2273,6 +2261,422 @@ function todayIso() {
   return normalizeDate(new Date());
 }
 
+function sortLabCategoriesServer(categories) {
+  return [...new Set((categories || []).filter(Boolean))].sort((left, right) => {
+    const leftIndex = LAB_CATEGORY_DISPLAY_ORDER.indexOf(left);
+    const rightIndex = LAB_CATEGORY_DISPLAY_ORDER.indexOf(right);
+    return (leftIndex === -1 ? LAB_CATEGORY_DISPLAY_ORDER.length : leftIndex) -
+      (rightIndex === -1 ? LAB_CATEGORY_DISPLAY_ORDER.length : rightIndex);
+  });
+}
+
+function dedupeMedicationEntries(items) {
+  const seen = new Set();
+  return (items || []).filter((item) => {
+    const key = `${item?.text || ""}|${item?.detail || ""}`;
+    if (!item?.text || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function mergeMedicationOrders(baseOrders, extraOrders) {
+  const all = dedupeMedicationEntries([...(baseOrders?.all || []), ...(extraOrders?.all || [])]);
+  const inj = dedupeMedicationEntries([...(baseOrders?.inj || []), ...(extraOrders?.inj || [])]);
+  const po = dedupeMedicationEntries([...(baseOrders?.po || []), ...(extraOrders?.po || [])]);
+  const running = dedupeMedicationEntries([...(baseOrders?.running || []), ...(extraOrders?.running || [])]);
+
+  return { all, inj, po, running };
+}
+
+function buildSyntheticMedicationPlan(input = {}) {
+  const ward = String(input.ward || "").trim();
+  const diagnosisText = normalizeClinicalText((input.diagnosisList || []).join(" / "));
+  const templates = getWardInjectionTemplates(ward, diagnosisText);
+  const existingInjectionNames = new Set((input.baseOrders?.inj || []).map((item) => item?.text).filter(Boolean));
+  const minimumInjectionCount = isCriticalCareWard(ward) ? 8 : 5;
+  const missingCount = Math.max(0, minimumInjectionCount - existingInjectionNames.size);
+  const seed = Number.parseInt(buildSyntheticCode(input.patientId, (input.dateIndex || 0) + 1), 10) || (input.dateIndex || 0);
+  const scheduledTimes = isCriticalCareWard(ward)
+    ? ["00:00", "03:00", "06:00", "09:00", "12:00", "15:00", "18:00", "21:00"]
+    : ["06:00", "08:00", "10:00", "14:00", "18:00", "22:00"];
+  const extras = [];
+  const events = [];
+  let offset = 0;
+
+  while (extras.length < missingCount && offset < templates.length * 2) {
+    const template = templates[(seed + offset) % templates.length];
+    const time = scheduledTimes[extras.length % scheduledTimes.length];
+    offset += 1;
+    if (!template || existingInjectionNames.has(template.name)) continue;
+    existingInjectionNames.add(template.name);
+    const detailParts = [template.dose, template.route, template.frequency];
+    if (template.note) detailParts.push(template.note);
+    const medication = {
+      text: template.name,
+      detail: detailParts.filter(Boolean).join(" / "),
+      prn: Boolean(template.prn),
+      scheduleTime: time
+    };
+    extras.push(medication);
+    events.push({
+      time,
+      nurse: fallbackNurseName((input.dateIndex || 0) + extras.length),
+      note: `${template.name} 투약 시행 후 주사부위와 이상반응 여부 확인함`,
+      event: template.alert ? template.name : ""
+    });
+  }
+
+  return {
+    orders: {
+      all: extras,
+      inj: extras,
+      po: [],
+      running: extras.filter((item) => /infusion|pump|지속주입|continuous/i.test(item.detail))
+    },
+    events
+  };
+}
+
+function getWardInjectionTemplates(ward, diagnosisText) {
+  if (ward === "내과계중환자실") {
+    return [
+      { name: "Norepinephrine inj.", dose: "4 mg", route: "IV infusion", frequency: "지속주입", note: "MAP 65 mmHg 이상 목표", alert: true },
+      { name: "Vasopressin inj.", dose: "20 U", route: "IV infusion", frequency: "지속주입", note: "혈압 추세에 따라 감량" },
+      { name: "Meropenem inj.", dose: "1 g", route: "IV", frequency: "q8h", note: "중증 감염 치료" },
+      { name: "Piperacillin/Tazobactam inj.", dose: "4.5 g", route: "IV", frequency: "q6h" },
+      { name: "Pantoprazole inj.", dose: "40 mg", route: "IV", frequency: "q24h" },
+      { name: "Regular insulin inj.", dose: "sliding scale", route: "SC", frequency: "q6h", note: "혈당 확인 후 투약" },
+      { name: "Heparin inj.", dose: "5000 U", route: "SC", frequency: "q12h", note: "DVT 예방" },
+      { name: "Furosemide inj.", dose: "20 mg", route: "IV", frequency: "q12h", note: "소변량 추세 확인" },
+      { name: "Potassium chloride inj.", dose: "20 mEq", route: "IV", frequency: "보충", note: "전해질 보정" },
+      { name: "Acetaminophen inj.", dose: "1 g", route: "IV", frequency: "PRN", note: "발열/통증 시", prn: true }
+    ];
+  }
+
+  if (ward === "외과계중환자실") {
+    return [
+      { name: "Propofol inj.", dose: "500 mg", route: "IV infusion", frequency: "지속주입", note: "진정 목표 유지", alert: true },
+      { name: "Fentanyl inj.", dose: "1000 mcg", route: "IV infusion", frequency: "지속주입", note: "통증/진정 조절" },
+      { name: "Piperacillin/Tazobactam inj.", dose: "4.5 g", route: "IV", frequency: "q6h" },
+      { name: "Cefmetazole inj.", dose: "1 g", route: "IV", frequency: "q8h", note: "수술 후 예방적 투약" },
+      { name: "Pantoprazole inj.", dose: "40 mg", route: "IV", frequency: "q24h" },
+      { name: "Heparin inj.", dose: "5000 U", route: "SC", frequency: "q12h", note: "DVT 예방" },
+      { name: "Ondansetron inj.", dose: "4 mg", route: "IV", frequency: "q12h", note: "오심 조절" },
+      { name: "Ketorolac inj.", dose: "30 mg", route: "IV", frequency: "q8h", note: "통증 조절" },
+      { name: "Albumin inj.", dose: "100 mL", route: "IV", frequency: "보충", note: "수액 반응 평가" },
+      { name: "Norepinephrine inj.", dose: "4 mg", route: "IV infusion", frequency: "지속주입", note: "저혈압 시 감량 조절", alert: true }
+    ];
+  }
+
+  if (ward === "신경과병동") {
+    return [
+      { name: "Mannitol inj.", dose: "100 mL", route: "IV", frequency: "q8h", note: "신경학적 상태 추적" },
+      { name: "Levetiracetam inj.", dose: "500 mg", route: "IV", frequency: "q12h", note: "경련 예방" },
+      { name: "Pantoprazole inj.", dose: "40 mg", route: "IV", frequency: "q24h" },
+      { name: "Heparin inj.", dose: "5000 U", route: "SC", frequency: "q12h", note: "혈전 예방" },
+      { name: "Acetaminophen inj.", dose: "1 g", route: "IV", frequency: "PRN", note: "두통/발열 시", prn: true },
+      { name: "Normal saline inj.", dose: "1000 mL", route: "IV infusion", frequency: "continuous", note: "수분 유지" },
+      { name: "Ondansetron inj.", dose: "4 mg", route: "IV", frequency: "q12h", note: "오심 조절" }
+    ];
+  }
+
+  if (ward === "외과병동") {
+    return [
+      { name: "Cefmetazole inj.", dose: "1 g", route: "IV", frequency: "q8h", note: "수술 후 항생제" },
+      { name: "Pantoprazole inj.", dose: "40 mg", route: "IV", frequency: "q24h" },
+      { name: "Ketorolac inj.", dose: "30 mg", route: "IV", frequency: "q8h", note: "통증 조절" },
+      { name: "Ondansetron inj.", dose: "4 mg", route: "IV", frequency: "q12h" },
+      { name: "Heparin inj.", dose: "5000 U", route: "SC", frequency: "q12h" },
+      { name: "Normal saline inj.", dose: "1000 mL", route: "IV infusion", frequency: "continuous", note: "수액 유지" },
+      { name: "Acetaminophen inj.", dose: "1 g", route: "IV", frequency: "PRN", note: "통증/발열 시", prn: true }
+    ];
+  }
+
+  return [
+    { name: /copd|asthma/.test(diagnosisText) ? "Methylprednisolone inj." : "Ceftriaxone inj.", dose: /copd|asthma/.test(diagnosisText) ? "40 mg" : "2 g", route: "IV", frequency: "q12h" },
+    { name: "Azithromycin inj.", dose: "500 mg", route: "IV", frequency: "q24h" },
+    { name: "Pantoprazole inj.", dose: "40 mg", route: "IV", frequency: "q24h" },
+    { name: "Heparin inj.", dose: "5000 U", route: "SC", frequency: "q12h" },
+    { name: "Furosemide inj.", dose: "20 mg", route: "IV", frequency: "q12h", note: "호흡곤란 및 체액 과다 관찰" },
+    { name: "Normal saline inj.", dose: "1000 mL", route: "IV infusion", frequency: "continuous", note: "수액 유지" },
+    { name: "Acetaminophen inj.", dose: "1 g", route: "IV", frequency: "PRN", note: "발열 시", prn: true }
+  ];
+}
+
+function findLatestLabCategoryMeta(date, dates, labMetaByDate, category) {
+  const candidates = (dates || []).filter((item) => String(item || "").localeCompare(date) <= 0).slice().reverse();
+  for (const candidate of candidates) {
+    const meta = labMetaByDate?.[candidate]?.[category];
+    if (meta) return meta;
+  }
+  return null;
+}
+
+function buildLabSummaryForDate(date, dates, dailyLabs, labMetaByDate = {}) {
+  const categories = sortLabCategoriesServer(Object.keys(dailyLabs || {}));
+  return categories.map((category) => {
+    const meta = findLatestLabCategoryMeta(date, dates, labMetaByDate, category);
+    return {
+      category,
+      performedAt: meta?.performedAt || `${date} 08:00`,
+      itemCount: Object.keys((dailyLabs || {})[category] || {}).length || meta?.itemCount || 0,
+      referenceOnly: !labMetaByDate?.[date]?.[category]
+    };
+  });
+}
+
+function buildSpecialStudyDetails(reports, procedures, documents) {
+  const details = [
+    ...(reports || []).map((item, index) => buildDiagnosticReportDetail(item, index)),
+    ...(procedures || []).filter(isStudyLikeProcedure).map((item, index) => buildProcedureStudyDetail(item, index)),
+    ...(documents || []).filter(isStudyLikeDocument).map((item, index) => buildDocumentStudyDetail(item, index))
+  ].filter(Boolean);
+
+  return dedupeSpecialDetailItems(details).slice(0, 8);
+}
+
+function dedupeSpecialDetailItems(items) {
+  const seen = new Set();
+  return (items || []).filter((item) => {
+    const key = `${item?.kind || ""}|${item?.title || ""}|${item?.performedAt || ""}`;
+    if (!item?.title || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function buildDiagnosticReportDetail(item, index) {
+  const title = reportLabel(item);
+  if (!title) return null;
+  const rawDateTime = item?.effectiveDateTime || item?.issued || item?.meta?.lastUpdated || "";
+  const date = reportDate(item) || todayIso();
+  const performedAt = `${date} ${normalizeTime(rawDateTime) || "08:00"}`;
+  const conclusion = item?.conclusion || codeableText(item?.conclusionCode?.[0]) || `${title} 판독 결과 확인 필요`;
+  const kind = /\bct\b|\bmri\b|x-ray|ultrasound|echo|scan|angiography/i.test(title.toLowerCase()) ? "영상검사" : "특수검사";
+
+  return {
+    key: `report-${item?.id || index}`,
+    kind,
+    title,
+    performedAt,
+    summary: `${title} · ${performedAt} 시행`,
+    impression: conclusion,
+    body: `${title} 관련 FHIR 판독 결과와 임상 경과를 함께 확인합니다. ${conclusion}`
+  };
+}
+
+function buildProcedureStudyDetail(item, index) {
+  const title = procedureLabel(item);
+  if (!title) return null;
+  const rawDateTime = item?.performedDateTime || item?.performedPeriod?.start || item?.meta?.lastUpdated || "";
+  const date = procedureDate(item) || todayIso();
+  const performedAt = `${date} ${normalizeTime(rawDateTime) || "10:00"}`;
+
+  return {
+    key: `procedure-${item?.id || index}`,
+    kind: /\bct\b|\bmri\b|x-ray|ultrasound|echo|scan/i.test(title.toLowerCase()) ? "영상검사" : "특수검사",
+    title,
+    performedAt,
+    summary: `${title} · ${performedAt} 시행`,
+    impression: `${title} 시행 후 결과 확인`,
+    body: `${title} 관련 시술/검사가 시행되었습니다. 시술 후 환자 상태와 합병증 여부를 함께 확인합니다.`
+  };
+}
+
+function buildDocumentStudyDetail(item, index) {
+  const title = documentTitle(item);
+  if (!title) return null;
+  const rawDateTime = item?.date || item?.meta?.lastUpdated || "";
+  const date = documentDate(item) || todayIso();
+  const performedAt = `${date} ${normalizeTime(rawDateTime) || "11:00"}`;
+
+  return {
+    key: `document-${item?.id || index}`,
+    kind: /\bct\b|\bmri\b|x-ray|ultrasound|echo|scan|report|영상|판독|특수/i.test(title.toLowerCase()) ? "영상검사" : "특수검사",
+    title,
+    performedAt,
+    summary: `${title} · ${performedAt} 확인`,
+    impression: `${title} 관련 문서 확인`,
+    body: `${title} 문서를 확인하고 관련 판독/기록 사항을 간호기록과 연계합니다.`
+  };
+}
+
+function isStudyLikeProcedure(item) {
+  return /\bct\b|\bmri\b|x-ray|ultrasound|echo|scan|endoscopy|bronchoscopy|angiography|ercp/i.test(String(procedureLabel(item) || "").toLowerCase());
+}
+
+function isStudyLikeDocument(item) {
+  return /\bct\b|\bmri\b|x-ray|ultrasound|echo|scan|report|영상|판독|특수/i.test(String(documentTitle(item) || "").toLowerCase());
+}
+
+function buildHourlyBaselineEvents(input = {}) {
+  return Array.from({ length: 24 }, (_, hour) => ({
+    time: `${String(hour).padStart(2, "0")}:00`,
+    nurse: fallbackNurseName((input.dateIndex || 0) + hour),
+    note: buildHourlyRoundNote({ ...input, hour }),
+    event: hour % 6 === 0 ? "정규 간호" : ""
+  }));
+}
+
+function buildHourlyRoundNote(input = {}) {
+  const hour = Number.parseInt(String(input.hour || 0), 10) || 0;
+  const ward = String(input.ward || "").trim();
+  const line = input.lineTube?.lines?.[0]?.text || "정맥로";
+  const tube = input.lineTube?.tubes?.[0]?.text || input.lineTube?.vent?.[0]?.text || "산소치료";
+  const drain = input.lineTube?.drains?.[0]?.text || "배액관";
+  const medication = input.medicationOrders?.inj?.[hour % Math.max(1, input.medicationOrders?.inj?.length || 1)]?.text || "정규 주사제";
+  const study = input.specialDetails?.[0]?.title || "예정 검사";
+
+  if (ward === "내과계중환자실") {
+    const notes = [
+      `야간 상태사정 후 혈압, 맥박, 호흡, SpO2 및 의식수준 재평가하고 ${line} 주입상태 확인함`,
+      "체위변경 시행하고 피부상태, 욕창위험부위, 말초순환 상태 확인함",
+      `${medication} 투약 시행 후 주사부위, 펌프 설정, 약물 반응 여부 확인함`,
+      "진정/통증 점수와 pupil 반응, 사지 말초순환 상태 재사정함",
+      "활력징후 추세와 urine output 확인하고 이상소견 여부 기록함",
+      "아침 채혈 및 검사 오더 준비, 혈당 확인, line flushing 시행함",
+      `${tube} 유지상태와 기도 분비물 여부 관찰하고 필요시 흡인 준비함`,
+      "교대 인계 후 당일 오더 및 중점 관찰 항목 재확인함",
+      "주치의 회진 동행 후 치료 계획과 투약 변경 사항 확인함",
+      `${line} 삽입부 드레싱과 고정 상태 확인하고 감염 징후 관찰함`,
+      `${study} 준비 상태와 환자 설명 여부 재확인함`,
+      "I/O 합산하고 체액 균형, 부종, 말초냉감 여부 평가함",
+      `${medication} 정규 시간 투약 후 혈압 및 반응 모니터링 지속함`,
+      "체위변경 및 구강간호 시행하고 보호자 문의사항 설명함",
+      `${drain} 배액량과 색 변화 확인 후 기록함`,
+      "ABP/SpO2/호흡양상 추세 확인 후 필요시 주치의에게 보고함",
+      "혈당 및 의식수준 재사정하고 저혈당/섬망 징후 확인함",
+      `${medication} 추가 투약 후 약효 및 이상반응 확인함`,
+      "저녁 회진 후 오더 변경사항 반영하고 야간 계획 재정리함",
+      "야간 초기 상태사정과 체위변경 시행함",
+      "피부, 말초순환, 체온 추세 확인하고 보온 상태 점검함",
+      `${tube} 유지상태와 알람 여부 확인하고 안전간호 수행함`,
+      `${line} 수액 교체 및 펌프 알람 점검 후 기록함`,
+      "자정 전 상태 재평가 후 이상소견 없음 확인함"
+    ];
+    return notes[hour];
+  }
+
+  if (ward === "외과계중환자실") {
+    const notes = [
+      "수술 후 전신상태 사정, 활력징후 및 의식수준 확인함",
+      `${drain} 배액량과 색, 창상 드레싱 상태 확인함`,
+      `${medication} 투약 시행 후 통증 및 진정 반응 확인함`,
+      "복부/수술부위 팽만, 출혈, 삼출 여부 재평가함",
+      "활력징후 및 통증 점수 재측정 후 기록함",
+      "아침 채혈과 검사 준비, 금식 여부, 수술 후 오더 재확인함",
+      `${line} 라인 및 수액 주입 상태 확인함`,
+      "교대 인계 후 수술 경과, 배액관, 금식 계획 재확인함",
+      "주치의 회진 후 상처관리 및 통증조절 계획 확인함",
+      `${drain} 배액량 합산 후 증가 여부 확인함`,
+      `${study} 시행 준비 및 이송 전 상태 확인함`,
+      "I/O 합산, 복부사정, 장음 및 오심 여부 확인함",
+      `${medication} 정규 투약 후 통증 완화 여부 재평가함`,
+      "체위변경 및 폐합병증 예방 위한 심호흡 격려함",
+      "상처 드레싱 오염 여부와 출혈 징후 확인함",
+      "오더 변경사항 확인 후 주사제/수액 스케줄 조정함",
+      "저녁 활력징후 측정 및 통증 재사정함",
+      `${medication} 추가 투약 후 오심/어지럼 여부 확인함`,
+      "저녁 회진 후 야간 중점관찰 항목 정리함",
+      "야간 상태사정 및 안전간호 시행함",
+      `${drain} 배액 상태와 소변량 확인함`,
+      `${line} 주입속도 및 펌프 알람 점검함`,
+      "수술부위 통증, 발열, 출혈 여부 재확인함",
+      "자정 전 전신상태 재평가 후 기록함"
+    ];
+    return notes[hour];
+  }
+
+  if (ward === "신경과병동") {
+    const notes = [
+      "의식수준, GCS, 동공크기/반응 및 사지근력 사정함",
+      "체위변경 시행하고 흡인 예방 위해 침상머리 상승 유지함",
+      `${medication} 투약 시행 후 이상반응 및 주사부위 확인함`,
+      "신경학적 변화, 언어상태, 안면비대칭 여부 재확인함",
+      "활력징후 측정 후 두통, 어지럼, 오심 여부 확인함",
+      "아침 채혈 및 검사 준비 후 금식/이송 여부 확인함",
+      `${tube} 유지상태와 연하곤란/흡인 징후 확인함`,
+      "교대 인계 후 낙상예방, aspiration precaution 재교육함",
+      "주치의 회진 후 재활 및 검사 계획 확인함",
+      "사지운동 범위와 체위변경 수행, 피부상태 확인함",
+      `${study} 결과 및 판독 내용 확인함`,
+      "식이 섭취량, 연하 상태, 수분 섭취량 확인함",
+      `${medication} 정규 시간 투약 후 통증/어지럼 여부 재평가함`,
+      "신경학적 증상 변화 여부와 보호자 문의사항 확인함",
+      "활동 허용 범위 내 보행/이동 보조 시행함",
+      "혈압, 맥박, 의식수준 추세 확인 후 기록함",
+      "낙상예방 환경 재점검 및 호출벨 사용 교육함",
+      `${medication} 추가 투약 후 반응 확인함`,
+      "저녁 회진 후 다음 근무조에 인계할 중점사항 정리함",
+      "야간 상태사정, 동공반응, 편마비 악화 여부 확인함",
+      "체위변경 및 피부간호 시행함",
+      `${tube} 유지상태와 기도분비물 여부 관찰함`,
+      "밤 시간 활력징후 및 신경학적 변화 재확인함",
+      "자정 전 상태 재평가 후 기록함"
+    ];
+    return notes[hour];
+  }
+
+  if (ward === "외과병동") {
+    const notes = [
+      "야간 상태사정 후 활력징후와 통증 정도 확인함",
+      "체위변경 및 피부상태, 낙상위험도 재확인함",
+      `${medication} 투약 시행 후 주사부위와 이상반응 확인함`,
+      "복부/수술부위 통증, 드레싱 상태, 배변 여부 관찰함",
+      "활력징후와 오심/구토 여부 재사정함",
+      "아침 채혈 및 검사 준비, 금식 여부 재확인함",
+      `${line} 유지상태와 수액 주입속도 점검함`,
+      "교대 인계 후 당일 수술/처치 계획 확인함",
+      "회진 후 상처관리 및 식이 진행 계획 확인함",
+      `${drain} 배액량과 창상 상태 확인함`,
+      `${study} 시행 준비 및 결과 확인 여부 점검함`,
+      "I/O 합산 후 복부팽만, 배변, 배뇨 상태 확인함",
+      `${medication} 정규 투약 후 통증 완화 여부 재평가함`,
+      "보행 가능 범위 확인 후 조기이상 보조 시행함",
+      "창상 드레싱과 출혈 징후 확인함",
+      "활력징후 추세 및 통증 조절 상태 기록함",
+      "식이 진행, 오심 여부, 장음 상태 확인함",
+      `${medication} 추가 투약 후 반응 확인함`,
+      "저녁 회진 후 오더 변경사항 확인함",
+      "야간 상태사정과 안전간호 시행함",
+      "체위변경 및 피부간호 시행함",
+      `${line} 주입상태와 알람 여부 확인함`,
+      "통증/발열/출혈 여부 재확인함",
+      "자정 전 상태 재평가 후 기록함"
+    ];
+    return notes[hour];
+  }
+
+  const notes = [
+    "야간 상태사정 후 활력징후, 호흡양상, SpO2 확인함",
+    "체위변경 시행하고 피부상태 및 객담 배출 상태 확인함",
+    `${medication} 투약 시행 후 이상반응과 주사부위 상태 확인함`,
+    "호흡곤란, 기침, 객담 양상 및 흉부 불편감 여부 재확인함",
+    "활력징후와 산소포화도 재측정 후 기록함",
+    "아침 채혈 및 검사 준비, 흡입치료 스케줄 확인함",
+    `${tube} 유지상태와 산소 공급량 점검함`,
+    "교대 인계 후 당일 검사/투약 계획 확인함",
+    "회진 후 항생제, 산소치료, 재활 계획 확인함",
+    "호흡운동, 기침 격려, 객담 배출 교육 시행함",
+    `${study} 결과 및 판독 내용 확인함`,
+    "식사량, 수분섭취, I/O 상태 확인함",
+    `${medication} 정규 투약 후 호흡곤란 완화 여부 재평가함`,
+    "호흡음, 객담 색/양, 흉부불편감 여부 확인함",
+    "조기 이상 및 낙상예방 교육 시행함",
+    "활력징후와 산소 요구량 추세 확인 후 기록함",
+    "저녁 식이 후 기침/호흡곤란 악화 여부 확인함",
+    `${medication} 추가 투약 후 반응 확인함`,
+    "저녁 회진 후 야간 중점관찰 항목 정리함",
+    "야간 상태사정과 안전간호 시행함",
+    "체위변경 및 구강간호, 객담 배출 격려함",
+    `${tube} 유지상태와 알람 여부 확인함`,
+    "호흡곤란, 발열, 흉부불편감 여부 재확인함",
+    "자정 전 상태 재평가 후 기록함"
+  ];
+  return notes[hour];
+}
+
 function buildDailyData(input) {
   const administrationEvents = buildAdministrationEventsByDate(input.administrations || [], input.dateMap || {});
   const reportEvents = buildReportEventsByDate(input.documents || [], input.reports || [], input.dateMap || {});
@@ -2303,27 +2707,45 @@ function buildDailyData(input) {
     const dailyDocuments = filterResourcesForDate(input.documents || [], documentDate, date, input.dateMap || {}, { mode: "recent", daysBack: 2, limit: 4 });
     const dailyObservations = filterResourcesForDate(input.observations || [], observationDateTime, date, input.dateMap || {}, { mode: "recent", daysBack: 1, limit: 40 });
     const dailyMedicationSet = filterMedicationSetForDate(input.medications || [], input.administrations || [], date, input.dateMap || {});
-    const dailyMedicationOrders = buildMedicationOrders(dailyMedicationSet.medications, dailyMedicationSet.administrations);
+    const baseMedicationOrders = buildMedicationOrders(dailyMedicationSet.medications, dailyMedicationSet.administrations);
     const dailyDiagnosisList = unique(dailyConditions.map(conditionLabel)).slice(0, 6);
-    const dailyDoctorOrders = buildDoctorOrders(dailyMedicationOrders, dailyServiceRequests, dailyCarePlans);
     const dailyLabs = input.observationSummary.labsByDate[date] || input.observationSummary.latestLabs || {};
     const dailyLineTube = buildDailyLineTubeSummary({
       baseLineTube: input.lineTube,
       procedures: dailyProcedures,
       serviceRequests: dailyServiceRequests,
       observations: dailyObservations,
-      medicationOrders: dailyMedicationOrders,
+      medicationOrders: baseMedicationOrders,
       carePlans: dailyCarePlans,
       useBaseFallback: date === input.dates[input.dates.length - 1]
     });
+    const syntheticMedicationPlan = buildSyntheticMedicationPlan({
+      patientId: input.patientId,
+      dateIndex: index,
+      ward: input.ward,
+      diagnosisList: dailyDiagnosisList.length ? dailyDiagnosisList : input.diagnosisList,
+      baseOrders: baseMedicationOrders
+    });
+    const dailyMedicationOrders = mergeMedicationOrders(baseMedicationOrders, syntheticMedicationPlan.orders);
+    const dailyDoctorOrders = buildDoctorOrders(dailyMedicationOrders, dailyServiceRequests, dailyCarePlans);
     const dailyNursingTasks = buildNursingTasks(dailyLineTube, dailyCarePlans, dailyDocuments);
     const dailyPlanItems = buildPlanItems(dailyDiagnosisList.length ? dailyDiagnosisList : input.diagnosisList, dailyCarePlans, dailyServiceRequests);
+    const specialDetails = buildSpecialStudyDetails(dailyReports, dailyProcedures, dailyDocuments);
+    const baselineHourlyEvents = buildHourlyBaselineEvents({
+      dateIndex: index,
+      ward: input.ward,
+      lineTube: dailyLineTube,
+      medicationOrders: dailyMedicationOrders,
+      specialDetails
+    });
     const eventNotes = [
+      ...baselineHourlyEvents,
       ...(input.observationSummary.eventsByDate[date] || []),
       ...(administrationEvents[date] || []),
       ...(reportEvents[date] || []),
       ...(nursingTaskEvents[date] || []),
-      ...(orderEvents[date] || [])
+      ...(orderEvents[date] || []),
+      ...(syntheticMedicationPlan.events || [])
     ].sort((a, b) => String(a.time || "").localeCompare(String(b.time || "")));
 
     const criticalCareProfile = buildCriticalCareProfile({
@@ -2363,7 +2785,9 @@ function buildDailyData(input) {
         po: dailyMedicationOrders.po
       },
       labs: dailyLabs,
+      labSummary: buildLabSummaryForDate(date, input.dates, dailyLabs, input.observationSummary.labMetaByDate || {}),
       specials: buildSpecialsForDate(dailyReports, dailyProcedures, dailyDocuments),
+      specialDetails,
       docOrders: dailyDoctorOrders,
       medSchedule: buildMedicationSchedule(dailyMedicationOrders),
       todoList: buildTodoList(
@@ -2636,16 +3060,16 @@ function buildHourlyTimeline(date, dayVital, events) {
     notes: []
   }));
 
-  events.slice(0, 40).forEach((event) => {
+  (events || []).slice(0, 160).forEach((event) => {
     const hour = clampHour(event.time);
     const note = event.nurse ? `${event.note} (${event.nurse})` : event.note;
     hourly[hour].notes.push(note);
     if (event.event && !hourly[hour].event) hourly[hour].event = event.event;
   });
 
-  hourly.forEach((slot, index) => {
-    if (!slot.notes.length && index % 4 === 0) {
-      slot.notes.push("정규 모니터링 및 상태 관찰");
+  hourly.forEach((slot) => {
+    if (!slot.notes.length) {
+      slot.notes.push("정규 모니터링 및 환자 상태 재사정 시행함");
     }
   });
 

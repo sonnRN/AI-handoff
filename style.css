@@ -824,6 +824,88 @@ textarea {
   padding: 16px;
 }
 
+.result-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.result-summary-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.result-summary-title {
+  font-size: 13px;
+  font-weight: bold;
+  color: #1f2d3d;
+}
+
+.result-summary-meta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #5f6b7a;
+}
+
+.result-link-btn {
+  flex-shrink: 0;
+  border: 1px solid #b7c6da;
+  background: #eef5ff;
+  color: #184f90;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.report-sheet {
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.report-sheet-header {
+  padding: 14px 16px;
+  background: #f5f8fc;
+  border-bottom: 1px solid #d8dee8;
+}
+
+.report-sheet-title {
+  font-size: 15px;
+  font-weight: bold;
+  color: #1f2d3d;
+}
+
+.report-sheet-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #5f6b7a;
+}
+
+.report-sheet-section {
+  padding: 14px 16px;
+  border-top: 1px solid #eef2f6;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #2a3441;
+}
+
+.report-sheet-label {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: bold;
+  color: #8a5c12;
+  text-transform: uppercase;
+}
+
 /* ===== 처방비교 테이블 ===== */
 .compare-container {
   display: grid;

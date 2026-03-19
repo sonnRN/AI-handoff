@@ -11,7 +11,7 @@ const {
 const DEFAULT_LIST_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_DETAIL_TTL_MS = 30 * 60 * 1000;
 const DEFAULT_CACHE_DIR = getDefaultCacheDir();
-const CACHE_SCHEMA_VERSION = "20260319-icu-split-v2";
+const CACHE_SCHEMA_VERSION = "20260319-five-ward-rich-v3";
 
 let sharedGateway = null;
 
