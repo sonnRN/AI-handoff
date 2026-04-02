@@ -59,9 +59,11 @@ Then open:
 
 - [http://127.0.0.1:8787](http://127.0.0.1:8787)
 
-The local server now serves both:
+The local server now serves:
 
 - the browser app (`/`)
+- the legacy handoff dashboard (`/handoff.html`)
+- the algorithm explainer (`/algorithm-demo.html`)
 - the existing patient APIs (`/api/patients`, `/api/patients-mcp`)
 - the new simulation API (`/api/simulation`)
 

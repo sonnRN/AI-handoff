@@ -8,6 +8,10 @@
     {
       "source": "/algorithm-demo",
       "destination": "/algorithm-demo.html"
+    },
+    {
+      "source": "/handoff",
+      "destination": "/handoff.html"
     }
   ],
   "functions": {
